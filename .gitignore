@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# macOS metadata
+._*
+.DS_Store
+
+# Secrets and local env
+.env
+.env.*
+!.env.example
+
+# Runtime private data
+data/token.key
+data/tokens.json
+
+# Local state (optional to commit)
+# data/sources.json
+# data/folders.json
+
+# Editor
+.vscode/
+.idea/

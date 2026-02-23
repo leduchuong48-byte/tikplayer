@@ -1,0 +1,1424 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
+    <title>DeerPlayer Ultra</title>
+    
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#000000">
+    <link rel="manifest" href="/manifest.json">
+
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.0/dist/hls.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/artplayer@5.3.0/dist/artplayer.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root { --primary: #fe2c55; --bg: #000; --card-bg: #1a1a1a; --text: #fff; --nav-height: 50px; }
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; outline: none; user-select: none; }
+        body { background: var(--bg); height: 100vh; height: 100dvh; width: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: var(--text); display: flex; flex-direction: column; }
+        
+        #app-container { flex: 1; position: relative; overflow: hidden; z-index: 1; height: 100dvh; }
+        .page { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; flex-direction: column; background: var(--bg); overflow-y: auto; padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom)); }
+        .page.active { display: flex; z-index: 10; }
+        #page-play { background: #000; overflow: hidden; padding-bottom: 0; }
+        
+        #player { width: 100%; height: 100%; background: #000; }
+        #player.landscape-mode .art-video { object-fit: contain !important; }
+        .art-video { object-fit: cover; transition: object-fit 0.3s; }
+        #image-viewer { width: 100%; height: 100%; display: none; background-size: contain; background-position: center; background-repeat: no-repeat; }
+        .art-controls { display: flex !important; }
+        #click-layer { position: absolute; top:0; left:0; width:100%; height:100%; z-index:15; }
+
+        .right-controls { position: absolute; right: 6px; bottom: calc(var(--nav-height) + env(safe-area-inset-bottom) + 25px); z-index: 20; display: flex; flex-direction: column; gap: 15px; pointer-events: auto; }
+        .control-item { display: flex; flex-direction: column; align-items: center; opacity: 0.9; transition: opacity 0.1s; }
+        .control-item:active { opacity: 0.6; transform: scale(0.95); }
+        .control-item:focus-visible, .nav-item:focus-visible, .action-item:focus-visible, [role="button"]:focus-visible {
+            outline: 2px solid var(--primary);
+            outline-offset: 2px;
+            border-radius: 6px;
+        }
+        .control-icon { font-size: 22px; margin-bottom: 2px; width: 38px; height: 38px; display:flex; align-items:center; justify-content:center; text-shadow: 0 1px 3px rgba(0,0,0,0.8); filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5)); }
+        .control-text { font-size: 10px; font-weight: 500; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
+
+        .progress-container { position: fixed; bottom: calc(var(--nav-height) + env(safe-area-inset-bottom)); left: 0; width: 100%; height: 20px; z-index: 1200; display: flex; align-items: flex-end; cursor: pointer; touch-action: none; }
+        .progress-bg { width: 100%; height: 1px; background: rgba(255,255,255,0.25); position: relative; transition: height 0.2s ease; }
+        .progress-current { height: 100%; width: 0; background: #fff; position: absolute; top: 0; left: 0; }
+        .progress-thumb { width: 8px; height: 8px; background: #fff; border-radius: 50%; position: absolute; right: -4px; top: 50%; transform: translateY(-50%) scale(0); transition: transform 0.2s; box-shadow: 0 0 4px rgba(0,0,0,0.5); }
+        .progress-container:active .progress-bg { height: 4px; background: rgba(255,255,255,0.35); }
+        .progress-container:active .progress-thumb { transform: translateY(-50%) scale(1.5); }
+
+        .bottom-nav { position: fixed; bottom: 0; left: 0; width: 100%; height: calc(var(--nav-height) + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); background: linear-gradient(to top, rgba(0,0,0,1), rgba(0,0,0,0.8)); display: flex; align-items: center; justify-content: space-around; z-index: 1000; backdrop-filter: blur(5px); }
+        .nav-item { display: flex; flex-direction: column; align-items: center; justify-content: center; color: #888; flex: 1; height: 100%; gap: 3px; }
+        .nav-item span { font-size: 9px; }
+        .nav-item i { font-size: 18px; margin-bottom: 2px; }
+        .nav-item.active { color: #fff; }
+
+        /* Drawers & Modals */
+        .archive-drawer, .context-menu { position: fixed; bottom: 0; left: 0; width: 100%; background: #141414; z-index: 2000; border-radius: 12px 12px 0 0; transform: translateY(100%); transition: transform 0.25s cubic-bezier(0.25, 0.8, 0.25, 1); padding: 12px; padding-bottom: calc(30px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; max-height: 70vh; }
+        .archive-drawer.open, .context-menu.open { transform: translateY(0); }
+        
+        .drawer-header { display: flex; justify-content: space-between; align-items: center; padding: 0 5px 12px 5px; border-bottom: 1px solid #222; margin-bottom: 10px; }
+        .slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 8px; overflow-y: auto; }
+        .slot-btn { background: #252525; color: #ddd; padding: 10px 5px; border-radius: 8px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 4px; border: 1px solid transparent; position: relative; }
+        .slot-btn:active { background: #333; border-color: var(--primary); transform: scale(0.96); }
+        .slot-icon { font-size: 18px; }
+        .slot-name { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; transform: scale(0.9); }
+        .slot-tag { position: absolute; top: 3px; right: 3px; font-size: 8px; color: var(--primary); opacity: 0.8; }
+        
+        /* Action Sheet */
+        .action-item { padding: 14px; text-align: center; font-size: 14px; border-bottom: 1px solid #222; color: #ddd; }
+        .action-item:last-child { border-bottom: none; }
+        .action-item:active { background: #222; }
+        .action-danger { color: #ff3b30; }
+
+        /* File & Settings */
+        .file-header { padding: 10px 15px; background: var(--card-bg); display: flex; gap: 10px; align-items: center; position: sticky; top: 0; z-index: 50; border-bottom: 1px solid #222; }
+        .breadcrumb { flex: 1; overflow-x: auto; white-space: nowrap; font-size: 12px; color: #888; }
+        .file-list { padding: 5px; }
+        .file-item { display: flex; align-items: center; padding: 12px 10px; margin-bottom: 4px; background: #1e1e1e; border-radius: 6px; transition: background 0.2s; }
+        .file-item.selected { background: #333; border: 1px solid var(--primary); }
+        .file-icon { font-size: 20px; margin-right: 12px; color: #666; }
+        .file-name { font-size: 13px; color: #eee; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
+        
+        .settings-container { padding: 15px; }
+        .settings-card { background: #1e1e1e; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+        .card-title { font-size: 12px; color: #666; margin-bottom: 10px; font-weight: 600; text-transform: uppercase; display: flex; justify-content: space-between;}
+        .form-group input { width: 100%; background: #111; border: 1px solid #333; color: #fff; padding: 10px; border-radius: 6px; font-size: 13px; margin-bottom: 8px; }
+        .btn-primary { background: var(--primary); color: #fff; border: none; padding: 10px; border-radius: 6px; width: 100%; font-size: 13px; font-weight: 600; }
+        .btn-row { display: flex; gap: 10px; }
+        
+        .center-msg { position: fixed; top: 15%; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); color: #fff; padding: 8px 16px; border-radius: 20px; pointer-events: none; opacity: 0; transition: opacity 0.3s; z-index: 3000; font-size: 12px; }
+        .loading-spinner { position: fixed; top:50%; left:50%; transform:translate(-50%,-50%); font-size:30px; color:rgba(255,255,255,0.6); animation:spin 0.8s linear infinite; display:none; z-index:50; pointer-events:none; }
+        .center-icon { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 40; font-size: 50px; color: rgba(255,255,255,0.6); pointer-events: none; opacity: 0; transition: opacity 0.2s; }
+        .center-icon.show { opacity: 1; }
+        @keyframes spin { 100% {transform:rotate(360deg)} }
+        
+        .source-selector { display: flex; gap: 6px; padding: 8px 12px; overflow-x: auto; background: var(--bg); border-bottom: 1px solid #111; }
+        .source-chip { padding: 5px 12px; background: #1a1a1a; color: #777; border-radius: 14px; font-size: 11px; white-space: nowrap; border: 1px solid #2a2a2a; }
+        .source-chip.active { background: #ddd; color: #000; border-color: #ddd; font-weight: 700; }
+        .path-chip-wrap { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+        .path-chip { background:#111; border:1px solid #333; color:#bbb; border-radius:12px; font-size:11px; padding:4px 10px; }
+        .picker-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 4000; display: none; }
+        .picker-overlay.open { display: block; }
+        .picker-panel { position:absolute; left:0; right:0; bottom:0; background:#141414; border-radius:12px 12px 0 0; max-height:72vh; display:flex; flex-direction:column; }
+        .picker-head { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid #222; }
+        .picker-list { overflow:auto; padding:8px 10px 16px; }
+        .picker-row { display:flex; align-items:center; gap:8px; padding:10px; border-radius:8px; background:#1e1e1e; margin-bottom:6px; }
+        .picker-row .name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+        .picker-toolbar { display:flex; gap:8px; padding:10px; border-top:1px solid #222; }
+        .search-input { width:100%; background:#111; color:#fff; border:1px solid #333; border-radius:8px; padding:8px 10px; font-size:12px; box-sizing:border-box; }
+        .search-count { color:#777; font-size:11px; margin-top:6px; }
+    </style>
+</head>
+<body>
+
+    <div id="app-container">
+        <div id="page-play" class="page active">
+            <div id="player"></div>
+            <div id="image-viewer"></div>
+            <div id="click-layer"></div>
+            <div class="center-icon" id="playIcon"><i class="fas fa-play"></i></div>
+
+            <div class="right-controls">
+                <div class="control-item" data-action="open-archive-root">
+                    <div class="control-icon" style="background: rgba(254, 44, 85, 0.15); border: 1px solid rgba(254, 44, 85, 0.4);"><i class="fas fa-folder-open" style="color: #fe2c55; font-size: 18px;"></i></div>
+                    <span class="control-text">收纳</span>
+                </div>
+                <div class="control-item" data-action="delete-current-media">
+                    <div class="control-icon" style="background: rgba(255,255,255,0.08);"><i class="fas fa-trash-alt" style="font-size: 18px;"></i></div>
+                    <span class="control-text">删除</span>
+                </div>
+                <div class="control-item" data-action="download-media"><div class="control-icon"><i class="fas fa-download"></i></div><span class="control-text">下载</span></div>
+                <div class="control-item" data-action="toggle-mute"><div class="control-icon"><i class="fas fa-volume-mute" id="volIcon"></i></div><span class="control-text" id="volText">静音</span></div>
+                <div class="control-item" data-action="toggle-landscape"><div class="control-icon"><i class="fas fa-mobile-screen-button"></i></div><span class="control-text">旋转</span></div>
+                <div class="control-item" data-action="toggle-fullscreen"><div class="control-icon"><i class="fas fa-expand"></i></div><span class="control-text">全屏</span></div>
+                <div class="control-item" data-action="reload-sources"><div class="control-icon"><i class="fas fa-sync-alt" id="reloadIcon"></i></div><span class="control-text">刷新源</span></div>
+            </div>
+
+            <div class="progress-container" id="progressBar">
+                <div class="progress-bg"><div class="progress-current" id="progressCurrent"><div class="progress-thumb"></div></div></div>
+            </div>
+            <div class="loading-spinner" id="loading"><i class="fas fa-spinner"></i></div>
+        </div>
+
+        <div id="page-files" class="page">
+            <div class="source-selector" id="sourceTabs"></div>
+            <div class="file-header">
+                <i class="fas fa-arrow-left" data-action="go-up-dir" style="padding:8px;color:#aaa;"></i>
+                <div class="breadcrumb" id="breadcrumb">/</div>
+                <div style="display:flex;gap:15px;align-items:center;">
+                     <i class="fas fa-folder-plus" style="font-size:16px;color:#ddd;" data-action="mkdir-prompt"></i>
+                     <i class="fas fa-play-circle" style="font-size:18px;color:var(--primary);" data-action="play-folder"></i>
+                </div>
+            </div>
+            <div style="padding:8px 12px;border-bottom:1px solid #1a1a1a;">
+                <input id="fileSearchInput" class="search-input" type="text" placeholder="搜索当前目录文件/文件夹...">
+                <div id="fileSearchCount" class="search-count"></div>
+            </div>
+            <div class="file-list" id="fileList"></div>
+        </div>
+
+        <div id="page-settings" class="page">
+            <div class="settings-container">
+                
+                <div class="settings-card">
+                    <div class="card-title">快捷收纳 (点击编辑)</div>
+                    <input id="quickFolderSearchInput" class="search-input" type="text" placeholder="搜索快捷收纳项..." style="margin-bottom:8px;">
+                    <div id="quickFolderSearchCount" class="search-count" style="margin-bottom:8px;"></div>
+                    <div id="quickFolderList"></div>
+                    <div style="margin-top:10px;padding-top:10px;border-top:1px solid #222;">
+                        <div class="form-group"><input type="text" id="newFolderName" placeholder="显示名称"></div>
+                        <div style="display:flex;gap:8px;margin-bottom:8px;">
+                            <input type="text" id="newFolderPath" placeholder="Alist路径" style="flex:2;" readonly>
+                            <select id="newFolderType" style="background:#111;color:#fff;border:1px solid #333;border-radius:6px;width:80px;">
+                                <option value="direct">直达</option>
+                                <option value="group">目录组</option>
+                            </select>
+                        </div>
+                        <div style="display:flex;gap:8px;margin-bottom:8px;">
+                            <select id="quickFolderSource" style="flex:1;background:#111;color:#fff;border:1px solid #333;border-radius:6px;padding:8px;"></select>
+                            <button class="btn-primary" data-action="open-quick-folder-picker" style="flex:1;background:#2b8a3e;">选择路径</button>
+                            <button class="btn-primary" data-action="quick-folder-use-current" style="flex:1;background:#4a4a4a;">当前目录</button>
+                        </div>
+                        <div class="path-chip-wrap" id="quickFolderSelectedPath"></div>
+                        <div class="btn-row">
+                            <button class="btn-primary" id="btnSaveFolder" data-action="save-folder">添加槽位</button>
+                            <button class="btn-primary" id="btnCancelEditFolder" data-action="cancel-edit-folder" style="background:#333;display:none;">取消</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-card">
+                    <div class="card-title">账号管理 (点击编辑)</div>
+                    <div id="accountList"></div>
+                    <div style="margin-top:10px;border-top:1px solid #222;padding-top:10px;">
+                        <div style="display:grid;grid-template-columns: 1fr 1fr; gap:8px;">
+                            <input type="text" id="accName" placeholder="备注名">
+                            <input type="text" id="accUrl" placeholder="http://ip:port">
+                        </div>
+                        <input type="text" id="accPath" placeholder="根目录 (默认/)" value="/" style="margin-top:8px;">
+                        <div style="display:grid;grid-template-columns: 1fr 1fr; gap:8px; margin-top:8px;">
+                            <input type="text" id="accUser" placeholder="用户名">
+                            <input type="password" id="accPass" placeholder="密码">
+                        </div>
+                        <div class="btn-row" style="margin-top:8px;">
+                            <button class="btn-primary" data-action="test-openlist" style="background:#2b63d9;">测试连接</button>
+                            <button class="btn-primary" data-action="open-folder-picker" style="background:#2b8a3e;">选择文件夹</button>
+                        </div>
+                        <div class="path-chip-wrap" id="selectedPaths"></div>
+                        <div class="btn-row" style="margin-top:8px;">
+                            <button class="btn-primary" id="btnSaveAccount" data-action="save-account">添加账号</button>
+                            <button class="btn-primary" id="btnCancelEditAccount" data-action="cancel-edit-account" style="background:#333;display:none;">取消</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <nav class="bottom-nav">
+        <div class="nav-item active" id="nav-play"><i class="fas fa-home"></i><span>首页</span></div>
+        <div class="nav-item" data-action="switch-tab" data-tab="files"><i class="fas fa-folder"></i><span>文件</span></div>
+        <div class="nav-item" data-action="switch-tab" data-tab="settings"><i class="fas fa-user"></i><span>我的</span></div>
+    </nav>
+
+    <div class="archive-drawer" id="archiveDrawer">
+        <div class="drawer-header">
+            <div class="drawer-title" id="drawerTitle"><span><i class="fas fa-share" style="margin-right:5px;"></i>快速收纳</span></div>
+            <i class="fas fa-chevron-down" data-action="close-archive-drawer" style="padding:5px 10px;font-size:16px;color:#666;"></i>
+        </div>
+        <div style="padding:0 12px 8px;">
+            <input id="archiveSearchInput" class="search-input" type="text" placeholder="搜索可收纳目标...">
+            <div id="archiveSearchCount" class="search-count"></div>
+        </div>
+        <div class="slot-grid" id="archiveSlots"></div>
+    </div>
+
+    <div class="context-menu" id="fileContextMenu">
+        <div style="text-align:center;color:#666;font-size:12px;padding:10px;" id="contextTitle">文件操作</div>
+        <div class="action-item" data-action="ctx-play">播放 / 进入</div>
+        <div class="action-item" data-action="ctx-archive">快速收纳</div>
+        <div class="action-item" data-action="ctx-rename">重命名</div>
+        <div class="action-item action-danger" data-action="ctx-delete">删除</div>
+        <div class="action-item" data-action="ctx-cancel" style="margin-top:10px;border-top:5px solid #000;">取消</div>
+    </div>
+
+    <div class="picker-overlay" id="folderPicker">
+        <div class="picker-panel">
+            <div class="picker-head">
+                <div id="pickerTitle" style="font-size:12px;color:#999;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">/</div>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn-primary" data-action="picker-up" style="width:auto;padding:6px 10px;background:#333;">上级</button>
+                    <button class="btn-primary" data-action="picker-close" style="width:auto;padding:6px 10px;background:#333;">关闭</button>
+                </div>
+            </div>
+            <div style="padding:10px 10px 0;">
+                <input id="pickerSearchInput" class="search-input" type="text" placeholder="搜索当前路径下子目录...">
+                <div id="pickerSearchCount" class="search-count"></div>
+            </div>
+            <div class="picker-list" id="pickerList"></div>
+            <div class="picker-toolbar">
+                <button class="btn-primary" data-action="picker-add-current" style="background:#333;">加入当前目录</button>
+                <button class="btn-primary" data-action="picker-confirm">确认选择</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="center-msg" id="toast"></div>
+
+    <script>
+        let state = {
+            currentTab: 'play', videoStack: [], currentIndex: -1,
+            sources: [], currentSource: null, currentPath: '/', 
+            useTranscode: false, quickFolders: [], dp: null, isMuted: true, playMode: 'random', isImagePaused: false,
+            archivePath: 'root',
+            editFolderIdx: -1, editAccountIdx: -1, // 编辑状态索引
+            ctxFile: null, // 当前操作的文件
+            abortController: {
+                browseFile: null,
+                loadNextVideo: null
+            },
+            uiState: {
+                isLoading: false,
+                lastFileListScrollTop: 0,
+                browseRequestToken: 0,
+                selectedPaths: [],
+                pickerPath: "/",
+                pickerDirs: [],
+                pickerMode: 'account',
+                quickFolderSelectedPath: '/',
+                quickFolderSource: '',
+                fileSearchQuery: '',
+                pickerSearchQuery: '',
+                quickFolderSearchQuery: '',
+                archiveSearchQuery: ''
+            },
+            mediaState: {
+                currentIndex: -1,
+                player: null,
+                hlsInstance: null,
+                playRequestToken: 0,
+                requestToken: 0,
+                preloadInFlight: false,
+                playWatchdogTimer: null,
+                disableSeekReason: ''
+            }
+        };
+        let imageTimer = null;
+        let startY=0, startTime=0, pressTimer=null, isLongPressing=false;
+
+        function debounce(fn, wait = 120) {
+            let timer = null;
+            return (...args) => {
+                clearTimeout(timer);
+                timer = setTimeout(() => fn(...args), wait);
+            };
+        }
+
+        function setLoading(visible) {
+            state.uiState.isLoading = visible;
+            document.getElementById('loading').style.display = visible ? 'block' : 'none';
+        }
+
+        function refreshAbortController(scope) {
+            if (state.abortController[scope]) state.abortController[scope].abort();
+            state.abortController[scope] = new AbortController();
+            return state.abortController[scope].signal;
+        }
+
+        function syncMediaState() {
+            state.mediaState.currentIndex = state.currentIndex;
+            state.mediaState.player = state.dp;
+        }
+
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+        
+        // 双击检测变量
+        let lastHomeClickTime = 0;
+
+        window.onload = async () => {
+            initPlayerControls(); initKeyboard(); initProgressBar(); initNavEvents();
+            initActionBus(); initFileListDelegation(); initA11yButtons(); initDebouncedInteractions(); initSearchHandlers();
+            await fetchSources(); await fetchFolders();
+            if(state.sources.length > 0) {
+                state.currentSource = state.sources[0].name;
+                renderSourceTabs(); loadNextVideo(true); browseFile(state.currentSource, '/');
+            } else { showToast("请添加源", "info"); switchTab('settings'); }
+        };
+
+        function initSearchHandlers() {
+            const onInputDebounced = debounce((targetId, stateKey, callback) => {
+                const el = document.getElementById(targetId);
+                if (!el) return;
+                state.uiState[stateKey] = (el.value || '').trim().toLowerCase();
+                callback();
+            }, 120);
+
+            const fileSearch = document.getElementById('fileSearchInput');
+            if (fileSearch) {
+                fileSearch.addEventListener('input', () => onInputDebounced('fileSearchInput', 'fileSearchQuery', renderFileList));
+            }
+
+            const pickerSearch = document.getElementById('pickerSearchInput');
+            if (pickerSearch) {
+                pickerSearch.addEventListener('input', () => onInputDebounced('pickerSearchInput', 'pickerSearchQuery', renderFolderPicker));
+            }
+
+            const quickFolderSearch = document.getElementById('quickFolderSearchInput');
+            if (quickFolderSearch) {
+                quickFolderSearch.addEventListener('input', () => onInputDebounced('quickFolderSearchInput', 'quickFolderSearchQuery', renderSettings));
+            }
+
+            const archiveSearch = document.getElementById('archiveSearchInput');
+            if (archiveSearch) {
+                archiveSearch.addEventListener('input', () => onInputDebounced('archiveSearchInput', 'archiveSearchQuery', applyArchiveSearchFilter));
+            }
+        }
+
+        function filterByKeyword(items, keyword, getText) {
+            if (!keyword) return items;
+            return items.filter(item => (getText(item) || '').toLowerCase().includes(keyword));
+        }
+
+        function renderSearchCount(id, matched, total, keyword) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            if (!total) {
+                el.textContent = keyword ? '匹配 0 / 0' : '';
+                return;
+            }
+            el.textContent = keyword ? `匹配 ${matched} / ${total}` : `共 ${total} 项`;
+        }
+
+        function dispatchAction(action, el, event) {
+            if (action === 'open-archive-root') openArchiveDrawer('root');
+            else if (action === 'delete-current-media') deleteCurrentMedia();
+            else if (action === 'download-media') downloadMedia();
+            else if (action === 'toggle-mute') toggleMute();
+            else if (action === 'toggle-landscape') toggleLandscape();
+            else if (action === 'toggle-fullscreen') toggleFullScreen();
+            else if (action === 'reload-sources') reloadSources();
+            else if (action === 'switch-tab') switchTab(el.dataset.tab);
+            else if (action === 'ctx-play') ctxPlay();
+            else if (action === 'ctx-archive') ctxArchive();
+            else if (action === 'ctx-rename') ctxRename();
+            else if (action === 'ctx-delete') ctxDelete();
+            else if (action === 'ctx-cancel') closeContextMenu();
+            else if (action === 'go-up-dir') goUpDir();
+            else if (action === 'mkdir-prompt') mkdirPrompt();
+            else if (action === 'play-folder') playFolder();
+            else if (action === 'save-folder') saveFolderItem();
+            else if (action === 'cancel-edit-folder') cancelEditFolder();
+            else if (action === 'save-account') saveAccountItem();
+            else if (action === 'cancel-edit-account') cancelEditAccount();
+            else if (action === 'close-archive-drawer') closeArchiveDrawer();
+            else if (action === 'archive-back-root') openArchiveDrawer('root');
+            else if (action === 'archive-handle-slot') {
+                const type = el.dataset.type || 'direct';
+                const path = decodeURIComponent(el.dataset.path || '');
+                const name = decodeURIComponent(el.dataset.name || '');
+                handleSlotClick(type, path, name);
+            }
+            else if (action === 'archive-move') {
+                const path = decodeURIComponent(el.dataset.path || '');
+                const name = decodeURIComponent(el.dataset.name || '');
+                execMove(path, name);
+            }
+            else if (action === 'settings-account-edit') fillAccountForm(Number(el.dataset.index));
+            else if (action === 'settings-account-del') delAccount(decodeURIComponent(el.dataset.name || ''));
+            else if (action === 'settings-folder-edit') fillFolderForm(Number(el.dataset.index));
+            else if (action === 'settings-folder-del') delQuickFolder(Number(el.dataset.index));
+            else if (action === 'change-source') changeSource(decodeURIComponent(el.dataset.source || ''));
+            else if (action === 'test-openlist') testOpenListConnection();
+            else if (action === 'open-folder-picker') openFolderPicker();
+            else if (action === 'open-quick-folder-picker') openQuickFolderPicker();
+            else if (action === 'quick-folder-use-current') useCurrentPathForQuickFolder();
+            else if (action === 'picker-close') closeFolderPicker();
+            else if (action === 'picker-up') folderPickerGoUp();
+            else if (action === 'picker-enter') folderPickerEnter(decodeURIComponent(el.dataset.path || '/'));
+            else if (action === 'picker-toggle') togglePickerPath(decodeURIComponent(el.dataset.path || '/'));
+            else if (action === 'picker-add-current') addCurrentPickerPath();
+            else if (action === 'picker-confirm') confirmPickerSelection();
+        }
+
+        function initActionBus() {
+            document.addEventListener('click', (event) => {
+                const actionEl = event.target.closest('[data-action]');
+                if (!actionEl) return;
+                if (actionEl.dataset.stopPropagation === '1') event.stopPropagation();
+                dispatchAction(actionEl.dataset.action, actionEl, event);
+            });
+
+            document.addEventListener('keydown', (event) => {
+                const actionEl = event.target.closest('[data-action]');
+                if (!actionEl) return;
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    dispatchAction(actionEl.dataset.action, actionEl, event);
+                }
+            });
+        }
+
+        function initA11yButtons() {
+            document.querySelectorAll('.control-item, .nav-item, .action-item, .slot-btn, [data-action]').forEach(el => {
+                el.setAttribute('role', 'button');
+                if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '0');
+            });
+        }
+
+        function normalizePath(path) {
+            if (!path) return '/';
+            const withSlash = path.startsWith('/') ? path : `/${path}`;
+            return withSlash.replace(/\/+/g, '/');
+        }
+
+        function getAccountDraft() {
+            return {
+                name: document.getElementById('accName').value.trim(),
+                url: document.getElementById('accUrl').value.trim(),
+                username: document.getElementById('accUser').value.trim(),
+                password: document.getElementById('accPass').value,
+                root_path: normalizePath(document.getElementById('accPath').value.trim() || '/'),
+            };
+        }
+
+        function getQuickFolderSourceDraft() {
+            const select = document.getElementById('quickFolderSource');
+            const sourceName = (select && select.value ? decodeURIComponent(select.value) : state.currentSource);
+            const source = state.sources.find(s => s.name === sourceName);
+            if (!source) return null;
+            state.uiState.quickFolderSource = sourceName;
+            return {
+                name: source.name,
+                url: (source.url || '').trim(),
+                username: (source.username || '').trim(),
+                password: source.password || '',
+                root_path: normalizePath(source.root_path || '/'),
+            };
+        }
+
+        function getPickerDraft() {
+            if (state.uiState.pickerMode === 'quick_folder') return getQuickFolderSourceDraft();
+            return getAccountDraft();
+        }
+
+        function renderSelectedPaths() {
+            const wrap = document.getElementById('selectedPaths');
+            const paths = state.uiState.selectedPaths.length ? state.uiState.selectedPaths : [normalizePath(document.getElementById('accPath').value || '/')];
+            wrap.innerHTML = paths.map(p => `<span class="path-chip">${escapeHtml(p)}</span>`).join('');
+        }
+
+        function renderQuickFolderPath() {
+            const wrap = document.getElementById('quickFolderSelectedPath');
+            if (!wrap) return;
+            const path = normalizePath(document.getElementById('newFolderPath').value || state.uiState.quickFolderSelectedPath || '/');
+            state.uiState.quickFolderSelectedPath = path;
+            wrap.innerHTML = `<span class="path-chip">${escapeHtml(path)}</span>`;
+        }
+
+        async function testOpenListConnection() {
+            const d = getAccountDraft();
+            if (!d.url) return showToast('请先填写地址');
+            try {
+                const res = await fetch('/v1/source/test-login', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({url: d.url, username: d.username, password: d.password})
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    return showToast(err.detail || '连接失败');
+                }
+                showToast('连接成功');
+            } catch (e) {
+                showToast('网络错误');
+            }
+        }
+
+        async function loadPickerDirs(path) {
+            const d = getPickerDraft();
+            if (!d || !d.url) throw new Error('请先配置可用源');
+            const normalizedPath = normalizePath(path);
+            const res = await fetch('/v1/source/dirs', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({url: d.url, username: d.username, password: d.password, path: normalizedPath})
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || '目录读取失败');
+            }
+            state.uiState.pickerPath = normalizedPath;
+            state.uiState.pickerDirs = await res.json();
+            renderFolderPicker();
+        }
+
+        async function openFolderPicker() {
+            const d = getAccountDraft();
+            if (!d.url) return showToast('请先填写地址');
+            state.uiState.pickerMode = 'account';
+            if (!state.uiState.selectedPaths.length && d.root_path) {
+                state.uiState.selectedPaths = [normalizePath(d.root_path)];
+            }
+            document.getElementById('folderPicker').classList.add('open');
+            try {
+                await loadPickerDirs(d.root_path || '/');
+            } catch (e) {
+                closeFolderPicker();
+                showToast(e.message || '打开目录失败');
+            }
+        }
+
+        async function openQuickFolderPicker() {
+            state.uiState.pickerMode = 'quick_folder';
+            const d = getQuickFolderSourceDraft();
+            if (!d || !d.url) return showToast('请先添加可用账号源');
+            const current = normalizePath(document.getElementById('newFolderPath').value || d.root_path || '/');
+            state.uiState.quickFolderSelectedPath = current;
+            state.uiState.selectedPaths = [current];
+            document.getElementById('folderPicker').classList.add('open');
+            try {
+                await loadPickerDirs(current);
+            } catch (e) {
+                closeFolderPicker();
+                showToast(e.message || '打开目录失败');
+            }
+        }
+
+        function useCurrentPathForQuickFolder() {
+            const current = normalizePath(state.currentPath || '/');
+            const sourceSelect = document.getElementById('quickFolderSource');
+            if (sourceSelect && state.currentSource) {
+                sourceSelect.value = encodeURIComponent(state.currentSource);
+                state.uiState.quickFolderSource = state.currentSource;
+            }
+            document.getElementById('newFolderPath').value = current;
+            state.uiState.quickFolderSelectedPath = current;
+            renderQuickFolderPath();
+            showToast(`已使用当前目录: ${current}`);
+        }
+
+        function closeFolderPicker() {
+            document.getElementById('folderPicker').classList.remove('open');
+        }
+
+        async function folderPickerEnter(path) {
+            try {
+                await loadPickerDirs(path);
+            } catch (e) {
+                showToast(e.message || '读取失败');
+            }
+        }
+
+        function folderPickerGoUp() {
+            if (state.uiState.pickerPath === '/') return;
+            const parts = state.uiState.pickerPath.split('/').filter(Boolean);
+            parts.pop();
+            const target = `/${parts.join('/')}` || '/';
+            folderPickerEnter(target);
+        }
+
+        function togglePickerPath(path) {
+            const normalizedPath = normalizePath(path);
+            if (state.uiState.pickerMode === 'quick_folder') {
+                state.uiState.selectedPaths = [normalizedPath];
+                state.uiState.quickFolderSelectedPath = normalizedPath;
+                renderFolderPicker();
+                renderQuickFolderPath();
+                return;
+            }
+            if (state.uiState.selectedPaths.includes(normalizedPath)) {
+                state.uiState.selectedPaths = state.uiState.selectedPaths.filter(p => p !== normalizedPath);
+            } else {
+                state.uiState.selectedPaths.push(normalizedPath);
+            }
+            renderFolderPicker();
+            renderSelectedPaths();
+        }
+
+        function addCurrentPickerPath() {
+            togglePickerPath(state.uiState.pickerPath);
+        }
+
+        function confirmPickerSelection() {
+            if (!state.uiState.selectedPaths.length) {
+                state.uiState.selectedPaths = [normalizePath(state.uiState.pickerPath)];
+            }
+            if (state.uiState.pickerMode === 'quick_folder') {
+                const selected = normalizePath(state.uiState.selectedPaths[0]);
+                document.getElementById('newFolderPath').value = selected;
+                state.uiState.quickFolderSelectedPath = selected;
+                renderQuickFolderPath();
+                closeFolderPicker();
+                return;
+            }
+            document.getElementById('accPath').value = state.uiState.selectedPaths[0];
+            renderSelectedPaths();
+            closeFolderPicker();
+        }
+
+        function renderFolderPicker() {
+            const title = document.getElementById('pickerTitle');
+            const list = document.getElementById('pickerList');
+            const searchInput = document.getElementById('pickerSearchInput');
+            title.textContent = state.uiState.pickerPath;
+            const query = state.uiState.pickerSearchQuery;
+            if (searchInput && searchInput.value !== query) searchInput.value = query;
+            const dirs = filterByKeyword(state.uiState.pickerDirs, query, (d) => `${d.name || ''} ${d.path || ''}`);
+            renderSearchCount('pickerSearchCount', dirs.length, state.uiState.pickerDirs.length, query);
+            list.innerHTML = dirs.length
+                ? dirs.map(dir => {
+                    const path = normalizePath(dir.path);
+                    const checked = state.uiState.selectedPaths.includes(path);
+                    return `<div class="picker-row"><input type="checkbox" ${checked ? 'checked' : ''} data-action="picker-toggle" data-path="${encodeURIComponent(path)}"><div class="name" data-action="picker-enter" data-path="${encodeURIComponent(path)}">📁 ${escapeHtml(dir.name || '')}</div></div>`;
+                }).join('')
+                : `<div style="text-align:center;color:#777;padding:14px 0;">${query ? '无匹配目录' : '无子目录'}</div>`;
+            initA11yButtons();
+        }
+
+        function initDebouncedInteractions() {
+            const fileList = document.getElementById('fileList');
+            const onFileListScroll = debounce(() => {
+                state.uiState.lastFileListScrollTop = fileList.scrollTop;
+            }, 80);
+            fileList.addEventListener('scroll', onFileListScroll);
+
+            const onResize = debounce(() => {
+                if (state.dp && typeof state.dp.resize === 'function') state.dp.resize();
+            }, 150);
+            window.addEventListener('resize', onResize);
+        }
+
+        function initFileListDelegation() {
+            const fileList = document.getElementById('fileList');
+            let longPressTimer = null;
+            let longPressTriggered = false;
+
+            fileList.addEventListener('click', (event) => {
+                const item = event.target.closest('.file-item');
+                if (!item) return;
+                const path = decodeURIComponent(item.dataset.path || '');
+                const isDir = item.dataset.isDir === '1';
+                onFileClick(path, isDir);
+            });
+
+            fileList.addEventListener('contextmenu', (event) => {
+                const item = event.target.closest('.file-item');
+                if (!item) return;
+                const path = decodeURIComponent(item.dataset.path || '');
+                const isDir = item.dataset.isDir === '1';
+                openContextMenu(event, path, isDir);
+            });
+
+            fileList.addEventListener('touchstart', (event) => {
+                const item = event.target.closest('.file-item');
+                if (!item) return;
+                longPressTriggered = false;
+                longPressTimer = setTimeout(() => {
+                    longPressTriggered = true;
+                    const path = decodeURIComponent(item.dataset.path || '');
+                    const isDir = item.dataset.isDir === '1';
+                    openContextMenu({ preventDefault: () => {} }, path, isDir);
+                }, 600);
+            }, { passive: true });
+
+            fileList.addEventListener('touchmove', () => clearTimeout(longPressTimer), { passive: true });
+            fileList.addEventListener('touchend', () => {
+                clearTimeout(longPressTimer);
+                if (longPressTriggered) longPressTriggered = false;
+            }, { passive: true });
+        }
+
+        function initNavEvents() {
+            const navPlay = document.getElementById('nav-play');
+            navPlay.addEventListener('click', (e) => {
+                const now = Date.now();
+                if (state.currentTab === 'play' && (now - lastHomeClickTime < 300)) {
+                    // 双击刷新
+                    showToast("🔄 刷新列表");
+                    resetPlayerUI();
+                    state.videoStack = [];
+                    state.currentIndex = -1;
+                    syncMediaState();
+                    loadNextVideo(true);
+                } else {
+                    switchTab('play');
+                }
+                lastHomeClickTime = now;
+            });
+        }
+
+        // --- Core Logic ---
+        function switchTab(tab) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            document.getElementById(`page-${tab}`).classList.add('active');
+            const map = {'play':0, 'files':1, 'settings':2};
+            document.querySelectorAll('.nav-item')[map[tab]].classList.add('active');
+            state.currentTab = tab;
+        }
+
+        async function loadNextVideo(isNext = true) {
+            const signal = refreshAbortController('loadNextVideo');
+            const requestToken = ++state.mediaState.requestToken;
+            let target = isNext ? state.currentIndex + 1 : state.currentIndex - 1;
+            if(target < 0) return showToast("已经是第一个了");
+            resetPlayerUI();
+            setLoading(true);
+            
+            let media;
+            if(target < state.videoStack.length) {
+                media = state.videoStack[target];
+                state.currentIndex = target;
+            } else {
+                if(state.playMode === 'folder') {
+                    setLoading(false);
+                    return showToast("列表播放完毕");
+                }
+                try {
+                    const res = await fetch('/v1/get_video', { signal });
+                    if(!res.ok) throw new Error();
+                    if (requestToken !== state.mediaState.requestToken) return;
+                    media = await res.json();
+                    state.videoStack.push(media);
+                    state.currentIndex = target;
+                    syncMediaState();
+                } catch(e) {
+                    if (e.name === 'AbortError') return;
+                    showToast("获取失败");
+                    setLoading(false);
+                    return;
+                }
+            }
+            syncMediaState();
+            renderPlayer(media);
+            setTimeout(() => preloadNext(requestToken, state.currentIndex), 1500);
+        }
+
+        function resetPlayerUI() {
+            clearTimeout(imageTimer); state.isImagePaused = false;
+            if (state.mediaState.playWatchdogTimer) {
+                clearTimeout(state.mediaState.playWatchdogTimer);
+                state.mediaState.playWatchdogTimer = null;
+            }
+            state.mediaState.playRequestToken += 1;
+            if(state.mediaState.hlsInstance) {
+                state.mediaState.hlsInstance.destroy();
+                state.mediaState.hlsInstance = null;
+            }
+            if(state.dp) { state.dp.destroy(); state.dp = null; }
+            syncMediaState();
+            document.getElementById('player').innerHTML = ''; document.getElementById('player').style.display = 'none';
+            document.getElementById('image-viewer').style.display = 'none';
+            document.getElementById('progressCurrent').style.width = '0%';
+            document.getElementById('playIcon').classList.remove('show');
+        }
+
+        function renderPlayer(media, options = {}) {
+            const forceDirect = options.forceDirect === true;
+            const attempt = Number.isFinite(options.attempt) ? options.attempt : 0;
+            const playerDiv = document.getElementById('player');
+            const imgDiv = document.getElementById('image-viewer');
+            if(media.type === 'image') {
+                state.mediaState.disableSeekReason = '当前为图片';
+                imgDiv.style.backgroundImage = `url('${media.url}')`;
+                imgDiv.style.display = 'block';
+                setLoading(false);
+                startImageTimer();
+            } else {
+                playerDiv.style.display = 'block';
+                let url = (state.useTranscode && !forceDirect) ? media.transcode_url : media.url;
+                state.mediaState.disableSeekReason = (url === media.transcode_url) ? '转码流暂不支持拖动定位，请关闭转码后重试' : '';
+                if(!state.useTranscode && media.recommend_transcode) showToast("⚡ 可开启转码优化播放，当前使用原始流以支持拖动进度条");
+                const playToken = ++state.mediaState.playRequestToken;
+                let recovered = false;
+
+                const recoverPlayback = (reason) => {
+                    if (recovered) return;
+                    if (playToken !== state.mediaState.playRequestToken) return;
+                    recovered = true;
+
+                    if (state.mediaState.playWatchdogTimer) {
+                        clearTimeout(state.mediaState.playWatchdogTimer);
+                        state.mediaState.playWatchdogTimer = null;
+                    }
+
+                    if ((state.useTranscode && !forceDirect) && media.url) {
+                        showToast("转码流加载异常，自动切换原始流");
+                        resetPlayerUI();
+                        renderPlayer(media, { forceDirect: true, attempt: attempt + 1 });
+                        return;
+                    }
+
+                    if (attempt < 1) {
+                        showToast("播放异常，自动重试一次");
+                        resetPlayerUI();
+                        renderPlayer(media, { forceDirect, attempt: attempt + 1 });
+                        return;
+                    }
+
+                    console.warn('播放恢复失败，自动切换下一条:', reason);
+                    showToast("当前资源播放失败，自动下一条");
+                    loadNextVideo(true);
+                };
+
+                const isHls = /\.m3u8(\?|$)/i.test(url);
+                state.dp = new Artplayer({
+                    container: playerDiv,
+                    url: url,
+                    autoplay: true,
+                    loop: true,
+                    muted: state.isMuted,
+                    poster: media.img_url,
+                    setting: true,
+                    volume: 0.7,
+                    fullscreenWeb: true,
+                    airplay: true,
+                    pip: true,
+                    type: isHls ? 'm3u8' : 'mp4',
+                    customType: {
+                        m3u8: function (video, playUrl) {
+                            if (Hls.isSupported()) {
+                                if (video._hls) video._hls.destroy();
+                                const hls = new Hls();
+                                hls.loadSource(playUrl);
+                                hls.attachMedia(video);
+                                video._hls = hls;
+                                state.mediaState.hlsInstance = hls;
+                            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                                video.src = playUrl;
+                                state.mediaState.hlsInstance = null;
+                            }
+                        }
+                    }
+                });
+                syncMediaState();
+                state.dp.toggle = () => {
+                    if (!state.dp || !state.dp.video) return;
+                    if (state.dp.video.paused) state.dp.play();
+                    else state.dp.pause();
+                };
+                state.dp.speed = (rate) => { if (state.dp && state.dp.video) state.dp.video.playbackRate = rate; };
+                state.dp.seek = (time) => { if (state.dp && state.dp.video) state.dp.video.currentTime = time; };
+
+                if(state.dp.video) {
+                    state.dp.video.muted = state.isMuted;
+                    state.dp.video.playsInline = true;
+                    state.dp.video.setAttribute('playsinline', 'true');
+                    state.dp.video.setAttribute('webkit-playsinline', 'true');
+                    state.dp.video.setAttribute('x5-playsinline', 'true');
+                    state.dp.video.setAttribute('autoplay', 'autoplay');
+                    state.dp.video.preload = 'auto';
+
+                    if (state.mediaState.playWatchdogTimer) {
+                        clearTimeout(state.mediaState.playWatchdogTimer);
+                    }
+                    state.mediaState.playWatchdogTimer = setTimeout(() => {
+                        recoverPlayback('watchdog-timeout');
+                    }, 12000);
+
+                    state.dp.video.addEventListener('timeupdate', () => {
+                        if(state.dp.video.duration) {
+                            document.getElementById('progressCurrent').style.width = (state.dp.video.currentTime / state.dp.video.duration) * 100 + '%';
+                        }
+                    });
+                    state.dp.video.addEventListener('canplay', () => {
+                        if (playToken !== state.mediaState.playRequestToken) return;
+                        if (state.mediaState.playWatchdogTimer) {
+                            clearTimeout(state.mediaState.playWatchdogTimer);
+                            state.mediaState.playWatchdogTimer = null;
+                        }
+                        setLoading(false);
+                        state.dp.play().catch(() => {
+                            state.dp.video.muted = true;
+                            state.dp.play().catch((err) => {
+                                recoverPlayback(err && err.message ? err.message : 'autoplay-blocked');
+                            });
+                        });
+                    }, { once: true });
+
+                    state.dp.video.addEventListener('error', () => {
+                        const mediaError = state.dp.video.error;
+                        const reason = mediaError ? `video-error-${mediaError.code}` : 'video-error';
+                        recoverPlayback(reason);
+                    });
+                    state.dp.video.addEventListener('stalled', () => recoverPlayback('stalled'));
+                }
+            }
+        }
+
+        // --- File Manager (Enhanced) ---
+        function renderFileList() {
+            const el = document.getElementById('fileList');
+            const searchInput = document.getElementById('fileSearchInput');
+            const files = Array.isArray(state.currentFileList) ? state.currentFileList : [];
+            const query = state.uiState.fileSearchQuery;
+            if (searchInput && searchInput.value !== query) searchInput.value = query;
+            const filtered = filterByKeyword(files, query, (f) => `${f.name || ''} ${f.path || ''}`);
+            renderSearchCount('fileSearchCount', filtered.length, files.length, query);
+            if (!filtered.length) {
+                el.innerHTML = query
+                    ? '<div style="text-align:center;padding:20px;color:#666;">无匹配结果</div>'
+                    : '<div style="text-align:center;padding:20px;color:#666;">空目录</div>';
+                return;
+            }
+            el.innerHTML = filtered.map(f => `
+                <div class="file-item" role="button" tabindex="0" data-path="${encodeURIComponent(f.path)}" data-is-dir="${f.is_dir ? '1' : '0'}">
+                    <i class="file-icon fas ${f.is_dir ? 'fa-folder folder' : 'fa-file-video video'}"></i>
+                    <div class="file-info"><div class="file-name">${escapeHtml(f.name)}</div><div class="file-meta">${f.is_dir?'-':(f.size/1048576).toFixed(1)+'MB'}</div></div>
+                </div>
+            `).join('');
+        }
+
+        async function browseFile(source, path) {
+            const signal = refreshAbortController('browseFile');
+            const requestToken = ++state.uiState.browseRequestToken;
+            const el = document.getElementById('fileList');
+            el.innerHTML = '<div style="text-align:center;padding:20px;color:#666;">加载中...</div>';
+            try {
+                const res = await fetch(`/v1/browse?source=${encodeURIComponent(source)}&path=${encodeURIComponent(path)}`, { signal });
+                if (requestToken !== state.uiState.browseRequestToken) return;
+                const files = await res.json();
+                state.currentFileList = files;
+                document.getElementById('breadcrumb').innerText = path;
+                renderFileList();
+            } catch(e) {
+                if (e.name === 'AbortError') return;
+                el.innerHTML = '加载失败';
+            }
+        }
+
+        function openContextMenu(e, path, isDir) {
+            e.preventDefault();
+            state.ctxFile = { path, isDir };
+            document.getElementById('contextTitle').innerText = path.split('/').pop();
+            document.getElementById('fileContextMenu').classList.add('open');
+        }
+        function closeContextMenu() { document.getElementById('fileContextMenu').classList.remove('open'); }
+
+        // Context Actions
+        function ctxPlay() { closeContextMenu(); onFileClick(state.ctxFile.path, state.ctxFile.isDir); }
+        function ctxArchive() { 
+            closeContextMenu(); 
+            // Hack: 临时构造一个 videoStack item 用于 execMove
+            state.videoStack[state.currentIndex] = { source: state.currentSource, raw_path: state.ctxFile.path };
+            openArchiveDrawer('root'); 
+        }
+        async function ctxRename() {
+            closeContextMenu();
+            const newName = prompt("重命名为:", state.ctxFile.path.split('/').pop());
+            if(!newName) return;
+            try {
+                const res = await fetch('/v1/fs/rename', {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({source: state.currentSource, path: state.ctxFile.path, new_name: newName})
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    return showToast(err.detail || '重命名失败');
+                }
+                await browseFile(state.currentSource, state.currentPath);
+                showToast("重命名成功");
+            } catch (e) {
+                showToast('网络错误');
+            }
+        }
+        async function ctxDelete() {
+            closeContextMenu();
+            if(!confirm("确定删除?")) return;
+            try {
+                const res = await fetch('/v1/delete_video', {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({source: state.currentSource, path: state.ctxFile.path})
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    return showToast(err.detail || '删除失败');
+                }
+                await browseFile(state.currentSource, state.currentPath);
+                showToast("删除成功");
+            } catch (e) {
+                showToast('网络错误');
+            }
+        }
+        async function mkdirPrompt() {
+            const name = prompt("文件夹名称:");
+            if(!name) return;
+            const newPath = (state.currentPath === '/' ? '' : state.currentPath) + '/' + name;
+            try {
+                const res = await fetch('/v1/fs/mkdir', {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({source: state.currentSource, path: newPath})
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    return showToast(err.detail || '创建失败');
+                }
+                await browseFile(state.currentSource, state.currentPath);
+                showToast('创建成功');
+            } catch (e) {
+                showToast('网络错误');
+            }
+        }
+
+        // --- Archive Drawer & Logic ---
+        function openArchiveDrawer(mode) {
+            state.archivePath = mode || 'root';
+            state.uiState.archiveSearchQuery = '';
+            renderArchiveDrawer();
+            document.getElementById('archiveDrawer').classList.add('open');
+        }
+        function closeArchiveDrawer() { document.getElementById('archiveDrawer').classList.remove('open'); }
+
+        function applyArchiveSearchFilter() {
+            const query = state.uiState.archiveSearchQuery;
+            const archiveSearchInput = document.getElementById('archiveSearchInput');
+            if (archiveSearchInput && archiveSearchInput.value !== query) archiveSearchInput.value = query;
+            const slotButtons = Array.from(document.querySelectorAll('#archiveSlots .slot-btn'));
+            let visibleCount = 0;
+            slotButtons.forEach(btn => {
+                const label = (btn.querySelector('.slot-name')?.textContent || '').toLowerCase();
+                const rawName = decodeURIComponent(btn.dataset.name || '').toLowerCase();
+                const rawPath = decodeURIComponent(btn.dataset.path || '').toLowerCase();
+                const visible = !query || label.includes(query) || rawName.includes(query) || rawPath.includes(query);
+                btn.style.display = visible ? '' : 'none';
+                if (visible) visibleCount += 1;
+            });
+            renderSearchCount('archiveSearchCount', visibleCount, slotButtons.length, query);
+        }
+
+        async function renderArchiveDrawer() {
+            const grid = document.getElementById('archiveSlots');
+            const title = document.getElementById('drawerTitle');
+            grid.innerHTML = '<div style="color:#666;font-size:12px;width:100%;">加载中...</div>';
+
+            if (state.archivePath === 'root') {
+                title.innerHTML = `<span><i class="fas fa-share" style="margin-right:5px;"></i>快速收纳</span>`;
+                grid.innerHTML = state.quickFolders.map(f => `
+                    <div class="slot-btn" data-action="archive-handle-slot" data-type="${escapeHtml(f.type || 'direct')}" data-path="${encodeURIComponent(f.path || '')}" data-name="${encodeURIComponent(f.name || '')}">
+                        <span class="slot-icon">${escapeHtml(f.icon || '')}</span>
+                        <span class="slot-name">${escapeHtml(f.name || '')}</span>
+                        ${f.type === 'group' ? '<i class="fas fa-layer-group slot-tag"></i>' : ''}
+                    </div>
+                `).join('');
+            } else {
+                title.innerHTML = `<span data-action="archive-back-root"><i class="fas fa-arrow-left" style="margin-right:8px;"></i>${escapeHtml(state.archivePath.split('/').pop())}</span>`;
+                try {
+                    const currentMedia = state.videoStack[state.currentIndex];
+                    const res = await fetch(`/v1/browse?source=${encodeURIComponent(currentMedia.source)}&path=${encodeURIComponent(state.archivePath)}`);
+                    const files = await res.json();
+                    const subFolders = files.filter(f => f.is_dir);
+                    grid.innerHTML = subFolders.map(f => `<div class="slot-btn" data-action="archive-move" data-path="${encodeURIComponent(f.path || '')}" data-name="${encodeURIComponent(f.name || '')}"><span class="slot-icon">📂</span><span class="slot-name">${escapeHtml(f.name || '')}</span></div>`).join('');
+                    grid.innerHTML = `<div class="slot-btn" data-action="archive-move" data-path="${encodeURIComponent(state.archivePath)}" data-name="${encodeURIComponent('当前')}" style="border-color:var(--primary);color:var(--primary);"><span class="slot-icon">📍</span><span class="slot-name">此处</span></div>` + grid.innerHTML;
+                } catch(e) { grid.innerHTML = 'Error'; }
+            }
+            applyArchiveSearchFilter();
+            initA11yButtons();
+        }
+        
+        function handleSlotClick(type, path, name) {
+            if(type === 'group') {
+                state.uiState.archiveSearchQuery = '';
+                state.archivePath = path;
+                renderArchiveDrawer();
+            } else { execMove(path, name); }
+        }
+        
+        async function execMove(dst, name) {
+            const current = state.videoStack[state.currentIndex];
+            if(!current) return;
+            closeArchiveDrawer(); showToast(`移动至 [${name}]...`);
+            try {
+                const res = await fetch('/v1/move_video', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({source: current.source, src_path: current.raw_path, dst_dir: dst}) });
+                if(res.ok) { showToast(`✅ 成功`); if(state.currentTab === 'play') setTimeout(() => loadNextVideo(true), 500); else browseFile(state.currentSource, state.currentPath); } 
+                else showToast("❌ 失败");
+            } catch(e) { showToast("网络错误"); }
+        }
+
+        // --- Settings Edit Logic ---
+        function fillFolderForm(idx) {
+            const f = state.quickFolders[idx];
+            document.getElementById('newFolderName').value = f.name;
+            document.getElementById('newFolderPath').value = f.path;
+            state.uiState.quickFolderSelectedPath = normalizePath(f.path || '/');
+            document.getElementById('newFolderType').value = f.type || 'direct';
+            document.getElementById('btnSaveFolder').innerText = "保存修改";
+            document.getElementById('btnCancelEditFolder').style.display = "inline-block";
+            renderQuickFolderPath();
+            state.editFolderIdx = idx;
+        }
+        function cancelEditFolder() {
+            document.getElementById('newFolderName').value = "";
+            document.getElementById('newFolderPath').value = "";
+            state.uiState.quickFolderSelectedPath = '/';
+            document.getElementById('btnSaveFolder').innerText = "添加槽位";
+            document.getElementById('btnCancelEditFolder').style.display = "none";
+            renderQuickFolderPath();
+            state.editFolderIdx = -1;
+        }
+        function saveFolderItem() {
+            const name = document.getElementById('newFolderName').value;
+            const path = normalizePath(document.getElementById('newFolderPath').value || state.uiState.quickFolderSelectedPath);
+            const type = document.getElementById('newFolderType').value;
+            if(!name || !path) return showToast('请先选择路径');
+            const item = { name, path, icon: type==='group'?'📂':'📁', type };
+            
+            if(state.editFolderIdx >= 0) state.quickFolders[state.editFolderIdx] = item;
+            else state.quickFolders.push(item);
+            
+            saveFoldersToServer();
+            cancelEditFolder();
+        }
+        
+        function fillAccountForm(idx) {
+            const s = state.sources[idx];
+            document.getElementById('accName').value = s.name;
+            document.getElementById('accUrl').value = s.url;
+            document.getElementById('accPath').value = s.root_path;
+            document.getElementById('accUser').value = s.username;
+            document.getElementById('accPass').value = s.password;
+            state.uiState.selectedPaths = (s.selected_paths && s.selected_paths.length ? s.selected_paths : [s.root_path || '/']).map(p => normalizePath(p));
+            renderSelectedPaths();
+            document.getElementById('btnSaveAccount').innerText = "保存修改";
+            document.getElementById('btnCancelEditAccount').style.display = "inline-block";
+            state.editAccountIdx = idx;
+        }
+        function cancelEditAccount() {
+             document.getElementById('accName').value = ""; document.getElementById('accUrl').value = "";
+             document.getElementById('accPath').value = "/"; document.getElementById('accUser').value = ""; document.getElementById('accPass').value = "";
+             document.getElementById('btnSaveAccount').innerText = "添加账号";
+             document.getElementById('btnCancelEditAccount').style.display = "none";
+             state.uiState.selectedPaths = [];
+             renderSelectedPaths();
+             state.editAccountIdx = -1;
+        }
+        async function saveAccountItem() {
+            const d = getAccountDraft();
+            if(!d.name || !d.url) return showToast("信息不全");
+            const selectedPaths = state.uiState.selectedPaths.length ? state.uiState.selectedPaths : [d.root_path];
+            const payload = {...d, root_path: selectedPaths[0], selected_paths: selectedPaths};
+
+            try {
+                const res = await fetch('/v1/sources', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    return showToast(err.detail || '保存失败');
+                }
+                await fetchSources();
+                renderSettings();
+                showToast("已保存，请点刷新源生效");
+                cancelEditAccount();
+            } catch (e) {
+                showToast('网络错误');
+            }
+        }
+
+        function renderSettings() {
+            const quickSearchInput = document.getElementById('quickFolderSearchInput');
+            if (quickSearchInput && quickSearchInput.value !== state.uiState.quickFolderSearchQuery) {
+                quickSearchInput.value = state.uiState.quickFolderSearchQuery;
+            }
+            document.getElementById('accountList').innerHTML = state.sources.map((s, i) => `
+                <div style="background:#222;padding:8px;border-radius:6px;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center;" data-action="settings-account-edit" data-index="${i}">
+                    <div style="overflow:hidden;"><div style="font-size:12px;font-weight:bold;">${escapeHtml(s.name || '')}</div><div style="font-size:9px;color:#666;">${escapeHtml(s.url || '')}</div></div>
+                    <i class="fas fa-trash" style="color:#ff3b30;padding:8px;" data-action="settings-account-del" data-name="${encodeURIComponent(s.name || '')}" data-stop-propagation="1"></i>
+                </div>`).join('');
+            const q = state.uiState.quickFolderSearchQuery;
+            const filteredQuickFolders = filterByKeyword(state.quickFolders, q, (f) => `${f.name || ''} ${f.path || ''} ${f.type || ''}`);
+            renderSearchCount('quickFolderSearchCount', filteredQuickFolders.length, state.quickFolders.length, q);
+            document.getElementById('quickFolderList').innerHTML = filteredQuickFolders.map((f) => {
+                const i = state.quickFolders.indexOf(f);
+                return `
+                <div style="display:flex;justify-content:space-between;background:#222;padding:8px;border-radius:6px;margin-bottom:5px;font-size:12px;align-items:center;" data-action="settings-folder-edit" data-index="${i}">
+                    <div style="display:flex;align-items:center;gap:5px;"><span>${escapeHtml(f.icon || '')}</span><span style="font-weight:bold;">${escapeHtml(f.name || '')}</span>${f.type==='group'?'<span style="font-size:9px;background:#333;padding:2px 4px;">组</span>':''}</div>
+                    <i class="fas fa-times" style="color:#666;padding:5px;" data-action="settings-folder-del" data-index="${i}" data-stop-propagation="1"></i>
+                </div>`;
+            }).join('') || (q ? '<div style="text-align:center;color:#777;padding:8px 0;font-size:12px;">无匹配槽位</div>' : '');
+            const sourceSelect = document.getElementById('quickFolderSource');
+            if (sourceSelect) {
+                sourceSelect.innerHTML = state.sources.map(s => `<option value="${encodeURIComponent(s.name || '')}">${escapeHtml(s.name || '')}</option>`).join('');
+                const preferred = state.uiState.quickFolderSource || state.currentSource || (state.sources[0] && state.sources[0].name) || '';
+                sourceSelect.value = encodeURIComponent(preferred);
+                state.uiState.quickFolderSource = decodeURIComponent(sourceSelect.value || encodeURIComponent(preferred));
+            }
+            renderQuickFolderPath();
+            initA11yButtons();
+        }
+
+        // --- Standard Config ---
+        async function fetchFolders() { try { const res = await fetch('/v1/folders'); state.quickFolders = await res.json(); renderSettings(); } catch(e){} }
+        async function saveFoldersToServer() { await fetch('/v1/folders', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(state.quickFolders)}); renderSettings(); }
+        function delQuickFolder(idx) { if(!confirm("删除槽位?")) return; state.quickFolders.splice(idx, 1); saveFoldersToServer(); }
+        async function fetchSources() { const res = await fetch('/v1/sources'); state.sources = await res.json(); }
+        async function delAccount(name) { if(confirm("删除?")) { await fetch(`/v1/sources/${name}`, {method:'DELETE'}); await fetchSources(); renderSettings(); showToast('已删除，请点刷新源生效'); } }
+        function toggleMute() { state.isMuted = !state.isMuted; if(state.dp && state.dp.video) state.dp.video.muted = state.isMuted; const icon = document.getElementById('volIcon'); if(state.isMuted) { icon.className = 'fas fa-volume-mute'; showToast("已静音"); } else { icon.className = 'fas fa-volume-up'; showToast("已开启声音"); } }
+        function toggleTranscode(el) { state.useTranscode = el.checked; }
+        function toggleFullScreen() { if(!document.fullscreenElement) document.documentElement.requestFullscreen(); else if(document.exitFullscreen) document.exitFullscreen(); }
+        async function reloadSources() {
+            const icon = document.getElementById('reloadIcon');
+            if(icon) icon.classList.add('fa-spin');
+            try {
+                const res = await fetch('/v1/reload', {method: 'POST'});
+                if(!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    showToast(err.detail || '刷新失败');
+                } else {
+                    showToast('源刷新成功');
+                    await fetchSources();
+                    renderSourceTabs();
+                }
+            } catch(e) {
+                showToast('网络错误');
+            } finally {
+                if(icon) setTimeout(() => icon.classList.remove('fa-spin'), 1000);
+            }
+        }
+        function toggleLandscape() { const p = document.getElementById('player'); if(p.classList.contains('landscape-mode')) { p.classList.remove('landscape-mode'); showToast("竖屏"); } else { p.classList.add('landscape-mode'); showToast("横屏"); } }
+        function downloadMedia() { const c = state.videoStack[state.currentIndex]; if(c) { const a = document.createElement('a'); a.href = c.download_url; a.click(); showToast("开始下载..."); } }
+        async function deleteCurrentMedia() { const current = state.videoStack[state.currentIndex]; if(!current) return; if(!confirm(`确定删除？`)) return; try { const res = await fetch('/v1/delete_video', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({source: current.source, path: current.raw_path}) }); if(res.ok) { showToast("已删除"); state.videoStack.splice(state.currentIndex, 1); state.currentIndex--; loadNextVideo(true); } else showToast("删除失败"); } catch(e) {} }
+        function startImageTimer() { clearTimeout(imageTimer); imageTimer = setTimeout(() => { if(!state.isImagePaused) loadNextVideo(true); }, 5000); }
+        async function preloadNext(expectedRequestToken, expectedIndex) {
+            if (state.playMode !== 'random') return;
+            if (expectedRequestToken !== state.mediaState.requestToken) return;
+            if (expectedIndex !== state.currentIndex) return;
+            if (state.mediaState.preloadInFlight) return;
+            state.mediaState.preloadInFlight = true;
+            try {
+                const res = await fetch('/v1/get_video');
+                if (!res.ok) return;
+                const next = await res.json();
+                if (expectedRequestToken !== state.mediaState.requestToken) return;
+                if (expectedIndex !== state.currentIndex) return;
+                state.videoStack.push(next);
+                fetch((state.useTranscode ? next.transcode_url : next.url), { headers: { 'Range': 'bytes=0-1024000' } }).catch(() => {});
+            } catch (e) {
+            } finally {
+                state.mediaState.preloadInFlight = false;
+            }
+        }
+        function initPlayerControls() { const layer = document.getElementById('click-layer'); layer.addEventListener('touchstart', e => { startY = e.touches[0].clientY; startTime = Date.now(); state.isLongPressing = false; pressTimer = setTimeout(() => { if(state.dp && !state.dp.video.paused) { state.dp.speed(3); showToast("🚀 3倍速"); state.isLongPressing = true; } }, 500); }); layer.addEventListener('touchmove', e => { if(Math.abs(e.touches[0].clientY - startY) > 10) clearTimeout(pressTimer); }); layer.addEventListener('touchend', e => { clearTimeout(pressTimer); if(state.isLongPressing) { if(state.dp) state.dp.speed(1); state.isLongPressing = false; return; } const diff = startY - e.changedTouches[0].clientY; if(Date.now() - startTime < 300 && Math.abs(diff) > 50) { if(diff > 0) loadNextVideo(true); else loadNextVideo(false); } else if (Date.now() - startTime < 300 && Math.abs(diff) < 10) { if(state.videoStack[state.currentIndex].type === 'image') { state.isImagePaused = !state.isImagePaused; if(state.isImagePaused) clearTimeout(imageTimer); else startImageTimer(); } else if(state.dp) state.dp.toggle(); } }); }
+        function initKeyboard() { window.addEventListener('keydown', e => { if(state.currentTab!=='play')return; if(["Space","ArrowUp","ArrowDown"].includes(e.code)) e.preventDefault(); switch(e.code) { case 'Space': if(state.dp) state.dp.toggle(); break; case 'ArrowUp': loadNextVideo(false); break; case 'ArrowDown': loadNextVideo(true); break; } }); }
+        function initProgressBar() {
+            const bar = document.getElementById('progressBar');
+            const cur = document.getElementById('progressCurrent');
+            let dragging = false;
+            let activePointerId = null;
+            let lastWarnAt = 0;
+
+            const seekAt = (clientX) => {
+                if (!state.dp || !state.dp.video) return;
+                if (state.mediaState.disableSeekReason) {
+                    if (Date.now() - lastWarnAt > 1000) {
+                        showToast(state.mediaState.disableSeekReason);
+                        lastWarnAt = Date.now();
+                    }
+                    return;
+                }
+                const rect = bar.getBoundingClientRect();
+                const progress = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+                cur.style.width = `${progress * 100}%`;
+                const duration = state.dp.video.duration;
+                if (Number.isFinite(duration) && duration > 0) {
+                    const target = duration * progress;
+                    state.dp.video.currentTime = target;
+                    if (typeof state.dp.seek === 'function') state.dp.seek(target);
+                    if ('currentTime' in state.dp) {
+                        try { state.dp.currentTime = target; } catch (_) {}
+                    }
+                } else if (Date.now() - lastWarnAt > 1000) {
+                    showToast('视频还在加载元数据，请稍后拖动');
+                    lastWarnAt = Date.now();
+                }
+            };
+
+            bar.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                seekAt(e.clientX);
+            });
+
+            bar.addEventListener('pointerdown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dragging = true;
+                activePointerId = e.pointerId;
+                if (bar.setPointerCapture) {
+                    try { bar.setPointerCapture(e.pointerId); } catch (_) {}
+                }
+                seekAt(e.clientX);
+            }, { passive: false });
+
+            window.addEventListener('pointermove', (e) => {
+                if (!dragging) return;
+                if (activePointerId !== null && e.pointerId !== activePointerId) return;
+                e.preventDefault();
+                seekAt(e.clientX);
+            }, { passive: false });
+
+            const endPointerDrag = (e) => {
+                if (activePointerId !== null && e && e.pointerId !== undefined && e.pointerId !== activePointerId) return;
+                if (bar.releasePointerCapture && activePointerId !== null) {
+                    try { bar.releasePointerCapture(activePointerId); } catch (_) {}
+                }
+                dragging = false;
+                activePointerId = null;
+            };
+            window.addEventListener('pointerup', endPointerDrag);
+            window.addEventListener('pointercancel', endPointerDrag);
+
+            // Mouse fallback
+            bar.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                dragging = true;
+                seekAt(e.clientX);
+            });
+            window.addEventListener('mousemove', (e) => {
+                if (!dragging) return;
+                seekAt(e.clientX);
+            });
+            window.addEventListener('mouseup', () => {
+                dragging = false;
+                activePointerId = null;
+            });
+
+            // Fallback for older touch implementations
+            bar.addEventListener('touchstart', (e) => {
+                if (!e.touches || !e.touches[0]) return;
+                e.preventDefault();
+                e.stopPropagation();
+                dragging = true;
+                seekAt(e.touches[0].clientX);
+            }, { passive: false });
+            bar.addEventListener('touchmove', (e) => {
+                if (!e.touches || !e.touches[0]) return;
+                e.preventDefault();
+                seekAt(e.touches[0].clientX);
+            }, { passive: false });
+            bar.addEventListener('touchend', () => {
+                dragging = false;
+                activePointerId = null;
+            }, { passive: true });
+            bar.addEventListener('touchcancel', () => {
+                dragging = false;
+                activePointerId = null;
+            }, { passive: true });
+        }
+        function renderSourceTabs() { document.getElementById('sourceTabs').innerHTML = state.sources.map(s => `<div class="source-chip ${s.name === state.currentSource ? 'active' : ''}" data-action="change-source" data-source="${encodeURIComponent(s.name || '')}">${escapeHtml(s.name || '')}</div>`).join(''); initA11yButtons(); }
+        function changeSource(name) { state.currentSource = name; state.currentPath = '/'; renderSourceTabs(); browseFile(name, '/'); }
+        function onFileClick(path, isDir) { if(isDir) { state.currentPath = path; browseFile(state.currentSource, path); } else { if (state.abortController.browseFile) state.abortController.browseFile.abort(); if (state.abortController.loadNextVideo) state.abortController.loadNextVideo.abort(); const media = { url: `/v1/stream?source=${state.currentSource}&path=${encodeURIComponent(path)}`, transcode_url: `/v1/transcode?source=${state.currentSource}&path=${encodeURIComponent(path)}`, download_url: `/v1/download?source=${state.currentSource}&path=${encodeURIComponent(path)}`, source: state.currentSource, raw_path: path, type: 'video' }; state.videoStack.splice(state.currentIndex + 1, 0, media); state.currentIndex++; state.playMode = 'random'; syncMediaState(); switchTab('play'); renderPlayer(media); } }
+        function goUpDir() { if(state.currentPath === '/') return; const p = state.currentPath.split('/'); p.pop(); state.currentPath = p.length === 1 ? '/' : p.join('/'); browseFile(state.currentSource, state.currentPath); }
+        function playFolder() { if(!state.currentFileList) return; const videos = state.currentFileList.filter(f => !f.is_dir).map(f => ({ url: `/v1/stream?source=${state.currentSource}&path=${encodeURIComponent(f.path)}`, transcode_url: `/v1/transcode?source=${state.currentSource}&path=${encodeURIComponent(f.path)}`, download_url: `/v1/download?source=${state.currentSource}&path=${encodeURIComponent(f.path)}`, source: state.currentSource, raw_path: f.path, type: 'video', name: f.name })); if(videos.length === 0) return showToast("无视频"); state.playMode = 'folder'; state.videoStack = videos; state.currentIndex = 0; switchTab('play'); renderPlayer(videos[0]); showToast(`播放 ${videos.length} 个视频`); }
+        function showToast(msg, type="info") { const t = document.getElementById('toast'); t.innerHTML = msg; t.style.opacity = 1; setTimeout(() => t.style.opacity = 0, 2000); }
+    </script>
+</body>
+</html>
