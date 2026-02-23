@@ -1,5 +1,7 @@
 # TikPlayer
 
+[English](README_en.md)
+
 基于 `FastAPI + AList + HLS` 的轻量媒体浏览与播放服务，支持从多个 AList 源聚合视频/图片并在网页端管理。
 
 ## 功能
@@ -55,6 +57,10 @@ cp .env.example .env
 - 仓库中不应提交真实账号、密码、令牌与私有地址。
 - `.env`、`data/token.key`、`data/tokens.json` 已默认忽略。
 - 发布前请执行一次敏感信息扫描。
+
+## 免责声明
+
+使用本项目即表示你已阅读并同意 [免责声明](DISCLAIMER.md)。
 
 ## License
 
