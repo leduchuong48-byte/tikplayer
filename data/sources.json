@@ -1,0 +1,12 @@
+[
+  {
+    "name": "source-1",
+    "url": "http://your-alist-host:5244",
+    "username": "your_username",
+    "password": "",
+    "root_path": "/",
+    "selected_paths": [
+      "/"
+    ]
+  }
+]

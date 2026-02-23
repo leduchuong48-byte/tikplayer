@@ -1,0 +1,6 @@
+fastapi==0.129.0
+uvicorn==0.41.0
+pydantic
+httpx==0.28.1
+python-dotenv
+cryptography==44.0.1
