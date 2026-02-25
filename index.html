@@ -11,13 +11,14 @@
     <meta name="theme-color" content="#000000">
     <link rel="manifest" href="/manifest.json">
 
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.11/dist/hls.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/artplayer@5.3.0/dist/artplayer.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="/static/hls.min.js"></script>
+    <script src="/static/artplayer.js"></script>
     
     <style>
         :root { --primary: #fe2c55; --bg: #000; --card-bg: #1a1a1a; --text: #fff; --nav-height: 50px; }
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; outline: none; user-select: none; }
+        .icon { display:inline-block; width:1em; height:1em; vertical-align:-0.125em; fill:currentColor; }
+        .icon-spin { animation:spin 0.8s linear infinite; }
         body { background: var(--bg); height: 100vh; height: 100dvh; width: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: var(--text); display: flex; flex-direction: column; }
         
         #app-container { flex: 1; position: relative; overflow: hidden; z-index: 1; height: 100dvh; }
@@ -92,7 +93,6 @@
         
         .center-msg { position: fixed; top: 15%; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); color: #fff; padding: 8px 16px; border-radius: 20px; pointer-events: none; opacity: 0; transition: opacity 0.3s; z-index: 3000; font-size: 12px; }
         .loading-spinner { position:fixed; inset:0; display:none; align-items:center; justify-content:center; font-size:30px; color:rgba(255,255,255,0.6); z-index:50; pointer-events:none; }
-        .loading-spinner i { animation:spin 0.8s linear infinite; }
         .center-icon { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 40; font-size: 50px; color: rgba(255,255,255,0.6); pointer-events: none; opacity: 0; transition: opacity 0.2s; }
         .center-icon.show { opacity: 1; }
         @keyframes spin { 100% {transform:rotate(360deg)} }
@@ -115,44 +115,68 @@
     </style>
 </head>
 <body>
+    <svg xmlns="http://www.w3.org/2000/svg" style="display:none;">
+        <symbol id="i-play" viewBox="0 0 384 512"><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80L0 432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></symbol>
+        <symbol id="i-home" viewBox="0 0 576 512"><path d="M575.8 255.5c0 18-15 32.1-32 32.1l-32 0 .7 160.2c0 2.7-.2 5.4-.5 8.1l0 16.2c0 22.1-17.9 40-40 40l-16 0c-1.1 0-2.2 0-3.3-.1c-1.4 .1-2.8 .1-4.2 .1L416 512l-24 0c-22.1 0-40-17.9-40-40l0-24 0-64c0-17.7-14.3-32-32-32l-64 0c-17.7 0-32 14.3-32 32l0 64 0 24c0 22.1-17.9 40-40 40l-24 0-31.9 0c-1.5 0-3-.1-4.5-.2c-1.2 .1-2.4 .2-3.6 .2l-16 0c-22.1 0-40-17.9-40-40l0-112c0-.9 0-1.9 .1-2.8l0-69.7-32 0c-18 0-32-14-32-32.1c0-9 3-17 10-24L266.4 8c7-7 15-8 22-8s15 2 21 7L564.8 231.5c8 7 12 15 11 24z"/></symbol>
+        <symbol id="i-folder" viewBox="0 0 512 512"><path d="M64 480H448c35.3 0 64-28.7 64-64V160c0-35.3-28.7-64-64-64H288c-10.1 0-19.6-4.7-25.6-12.8L243.2 57.6C231.1 41.5 212.1 32 192 32H64C28.7 32 0 60.7 0 96V416c0 35.3 28.7 64 64 64z"/></symbol>
+        <symbol id="i-folder-open" viewBox="0 0 576 512"><path d="M88.7 223.8L0 375.8 0 96C0 60.7 28.7 32 64 32l117.5 0c17 0 33.3 6.7 45.3 18.7l26.5 26.5c12 12 28.3 18.7 45.3 18.7L416 96c35.3 0 64 28.7 64 64l0 32-336 0c-22.8 0-43.8 12.1-55.3 31.8zm27.6 16.1C122.1 230 132.6 224 144 224l400 0c11.5 0 22 6.1 27.7 16.1s5.7 22.2-.1 32.1l-112 192C453.9 474 443.4 480 432 480L32 480c-11.5 0-22-6.1-27.7-16.1s-5.7-22.2 .1-32.1l112-192z"/></symbol>
+        <symbol id="i-folder-plus" viewBox="0 0 512 512"><path d="M512 416c0 35.3-28.7 64-64 64L64 480c-35.3 0-64-28.7-64-64L0 96C0 60.7 28.7 32 64 32l128 0c20.1 0 39.1 9.5 51.2 25.6l19.2 25.6c6 8.1 15.5 12.8 25.6 12.8l160 0c35.3 0 64 28.7 64 64l0 256zM232 376c0 13.3 10.7 24 24 24s24-10.7 24-24l0-64 64 0c13.3 0 24-10.7 24-24s-10.7-24-24-24l-64 0 0-64c0-13.3-10.7-24-24-24s-24 10.7-24 24l0 64-64 0c-13.3 0-24 10.7-24 24s10.7 24 24 24l64 0 0 64z"/></symbol>
+        <symbol id="i-trash" viewBox="0 0 448 512"><path d="M135.2 17.7L128 32 32 32C14.3 32 0 46.3 0 64S14.3 96 32 96l384 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-96 0-7.2-14.3C307.4 6.8 296.3 0 284.2 0L163.8 0c-12.1 0-23.2 6.8-28.6 17.7zM416 128L32 128 53.2 467c1.6 25.3 22.6 45 47.9 45l245.8 0c25.3 0 46.3-19.7 47.9-45L416 128z"/></symbol>
+        <symbol id="i-trash-alt" viewBox="0 0 448 512"><path d="M135.2 17.7C140.6 6.8 151.7 0 163.8 0L284.2 0c12.1 0 23.2 6.8 28.6 17.7L320 32l96 0c17.7 0 32 14.3 32 32s-14.3 32-32 32L32 96C14.3 96 0 81.7 0 64S14.3 32 32 32l96 0 7.2-14.3zM32 128l384 0 0 320c0 35.3-28.7 64-64 64L96 512c-35.3 0-64-28.7-64-64l0-320zm96 64c-8.8 0-16 7.2-16 16l0 224c0 8.8 7.2 16 16 16s16-7.2 16-16l0-224c0-8.8-7.2-16-16-16zm96 0c-8.8 0-16 7.2-16 16l0 224c0 8.8 7.2 16 16 16s16-7.2 16-16l0-224c0-8.8-7.2-16-16-16zm96 0c-8.8 0-16 7.2-16 16l0 224c0 8.8 7.2 16 16 16s16-7.2 16-16l0-224c0-8.8-7.2-16-16-16z"/></symbol>
+        <symbol id="i-download" viewBox="0 0 512 512"><path d="M288 32c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 242.7-73.4-73.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l128 128c12.5 12.5 32.8 12.5 45.3 0l128-128c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L288 274.7 288 32zM64 352c-35.3 0-64 28.7-64 64l0 32c0 35.3 28.7 64 64 64l384 0c35.3 0 64-28.7 64-64l0-32c0-35.3-28.7-64-64-64l-101.5 0-45.3 45.3c-25 25-65.5 25-90.5 0L165.5 352 64 352zm368 56a24 24 0 1 1 0 48 24 24 0 1 1 0-48z"/></symbol>
+        <symbol id="i-volume-mute" viewBox="0 0 576 512"><path d="M301.1 34.8C312.6 40 320 51.4 320 64l0 384c0 12.6-7.4 24-18.9 29.2s-25 3.1-34.4-5.3L131.8 352 64 352c-35.3 0-64-28.7-64-64l0-64c0-35.3 28.7-64 64-64l67.8 0L266.7 40.1c9.4-8.4 22.9-10.4 34.4-5.3zM425 167l55 55 55-55c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9l-55 55 55 55c9.4 9.4 9.4 24.6 0 33.9s-24.6 9.4-33.9 0l-55-55-55 55c-9.4 9.4-24.6 9.4-33.9 0s-9.4-24.6 0-33.9l55-55-55-55c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0z"/></symbol>
+        <symbol id="i-volume-up" viewBox="0 0 640 512"><path d="M533.6 32.5C598.5 85.2 640 165.8 640 256s-41.5 170.7-106.4 223.5c-10.3 8.4-25.4 6.8-33.8-3.5s-6.8-25.4 3.5-33.8C557.5 398.2 592 331.2 592 256s-34.5-142.2-88.7-186.3c-10.3-8.4-11.8-23.5-3.5-33.8s23.5-11.8 33.8-3.5zM473.1 107c43.2 35.2 70.9 88.9 70.9 149s-27.7 113.8-70.9 149c-10.3 8.4-25.4 6.8-33.8-3.5s-6.8-25.4 3.5-33.8C475.3 341.3 496 301.1 496 256s-20.7-85.3-53.2-111.8c-10.3-8.4-11.8-23.5-3.5-33.8s23.5-11.8 33.8-3.5zm-60.5 74.5C434.1 199.1 448 225.9 448 256s-13.9 56.9-35.4 74.5c-10.3 8.4-25.4 6.8-33.8-3.5s-6.8-25.4 3.5-33.8C393.1 284.4 400 271 400 256s-6.9-28.4-17.7-37.3c-10.3-8.4-11.8-23.5-3.5-33.8s23.5-11.8 33.8-3.5zM301.1 34.8C312.6 40 320 51.4 320 64l0 384c0 12.6-7.4 24-18.9 29.2s-25 3.1-34.4-5.3L131.8 352 64 352c-35.3 0-64-28.7-64-64l0-64c0-35.3 28.7-64 64-64l67.8 0L266.7 40.1c9.4-8.4 22.9-10.4 34.4-5.3z"/></symbol>
+        <symbol id="i-mobile" viewBox="0 0 384 512"><path d="M16 64C16 28.7 44.7 0 80 0L304 0c35.3 0 64 28.7 64 64l0 384c0 35.3-28.7 64-64 64L80 512c-35.3 0-64-28.7-64-64L16 64zM224 448a32 32 0 1 0 -64 0 32 32 0 1 0 64 0zM304 64L80 64l0 320 224 0 0-320z"/></symbol>
+        <symbol id="i-expand" viewBox="0 0 448 512"><path d="M32 32C14.3 32 0 46.3 0 64l0 96c0 17.7 14.3 32 32 32s32-14.3 32-32l0-64 64 0c17.7 0 32-14.3 32-32s-14.3-32-32-32L32 32zM64 352c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 96c0 17.7 14.3 32 32 32l96 0c17.7 0 32-14.3 32-32s-14.3-32-32-32l-64 0 0-64zM320 32c-17.7 0-32 14.3-32 32s14.3 32 32 32l64 0 0 64c0 17.7 14.3 32 32 32s32-14.3 32-32l0-96c0-17.7-14.3-32-32-32l-96 0zM448 352c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 64-64 0c-17.7 0-32 14.3-32 32s14.3 32 32 32l96 0c17.7 0 32-14.3 32-32l0-96z"/></symbol>
+        <symbol id="i-sync" viewBox="0 0 512 512"><path d="M105.1 202.6c7.7-21.8 20.2-42.3 37.8-59.8c62.5-62.5 163.8-62.5 226.3 0L386.3 160 352 160c-17.7 0-32 14.3-32 32s14.3 32 32 32l111.5 0c0 0 0 0 0 0l.4 0c17.7 0 32-14.3 32-32l0-112c0-17.7-14.3-32-32-32s-32 14.3-32 32l0 35.2L414.4 97.6c-87.5-87.5-229.3-87.5-316.8 0C73.2 122 55.6 150.7 44.8 181.4c-5.9 16.7 2.9 34.9 19.5 40.8s34.9-2.9 40.8-19.5zM39 289.3c-5 1.5-9.8 4.2-13.7 8.2c-4 4-6.7 8.8-8.1 14c-.3 1.2-.6 2.5-.8 3.8c-.3 1.7-.4 3.4-.4 5.1L16 432c0 17.7 14.3 32 32 32s32-14.3 32-32l0-35.1 17.6 17.5c0 0 0 0 0 0c87.5 87.4 229.3 87.4 316.7 0c24.4-24.4 42.1-53.1 52.9-83.8c5.9-16.7-2.9-34.9-19.5-40.8s-34.9 2.9-40.8 19.5c-7.7 21.8-20.2 42.3-37.8 59.8c-62.5 62.5-163.8 62.5-226.3 0l-.1-.1L125.6 352l34.4 0c17.7 0 32-14.3 32-32s-14.3-32-32-32L48.4 288c-1.6 0-3.2 .1-4.8 .3s-3.1 .5-4.6 1z"/></symbol>
+        <symbol id="i-spinner" viewBox="0 0 512 512"><path d="M304 48a48 48 0 1 0 -96 0 48 48 0 1 0 96 0zm0 416a48 48 0 1 0 -96 0 48 48 0 1 0 96 0zM48 304a48 48 0 1 0 0-96 48 48 0 1 0 0 96zm464-48a48 48 0 1 0 -96 0 48 48 0 1 0 96 0zM142.9 437A48 48 0 1 0 75 369.1 48 48 0 1 0 142.9 437zm0-294.2A48 48 0 1 0 75 75a48 48 0 1 0 67.9 67.9zM369.1 437A48 48 0 1 0 437 369.1 48 48 0 1 0 369.1 437z"/></symbol>
+        <symbol id="i-arrow-left" viewBox="0 0 448 512"><path d="M9.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.2 288 416 288c17.7 0 32-14.3 32-32s-14.3-32-32-32l-306.7 0L214.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></symbol>
+        <symbol id="i-play-circle" viewBox="0 0 512 512"><path d="M0 256a256 256 0 1 1 512 0A256 256 0 1 1 0 256zM188.3 147.1c-7.6 4.2-12.3 12.3-12.3 20.9l0 176c0 8.7 4.7 16.7 12.3 20.9s16.8 4.1 24.3-.5l144-88c7.1-4.4 11.5-12.1 11.5-20.5s-4.4-16.1-11.5-20.5l-144-88c-7.4-4.5-16.7-4.7-24.3-.5z"/></symbol>
+        <symbol id="i-user" viewBox="0 0 448 512"><path d="M224 256A128 128 0 1 0 224 0a128 128 0 1 0 0 256zm-45.7 48C79.8 304 0 383.8 0 482.3C0 498.7 13.3 512 29.7 512l388.6 0c16.4 0 29.7-13.3 29.7-29.7C448 383.8 368.2 304 269.7 304l-91.4 0z"/></symbol>
+        <symbol id="i-share" viewBox="0 0 448 512"><path d="M352 224c53 0 96-43 96-96s-43-96-96-96s-96 43-96 96c0 4 .2 8 .7 11.9l-94.1 47C145.4 170.2 121.9 160 96 160c-53 0-96 43-96 96s43 96 96 96c25.9 0 49.4-10.2 66.6-26.9l94.1 47c-.5 3.9-.7 7.8-.7 11.9c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-25.9 0-49.4 10.2-66.6 26.9l-94.1-47c.5-3.9 .7-7.8 .7-11.9s-.2-8-.7-11.9l94.1-47C302.6 213.8 326.1 224 352 224z"/></symbol>
+        <symbol id="i-chevron-down" viewBox="0 0 512 512"><path d="M233.4 406.6c12.5 12.5 32.8 12.5 45.3 0l192-192c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L256 338.7 86.6 169.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l192 192z"/></symbol>
+        <symbol id="i-file-video" viewBox="0 0 384 512"><path d="M64 0C28.7 0 0 28.7 0 64L0 448c0 35.3 28.7 64 64 64l256 0c35.3 0 64-28.7 64-64l0-288-128 0c-17.7 0-32-14.3-32-32L224 0 64 0zM256 0l0 128 128 0L256 0zM64 288c0-17.7 14.3-32 32-32l96 0c17.7 0 32 14.3 32 32l0 96c0 17.7-14.3 32-32 32l-96 0c-17.7 0-32-14.3-32-32l0-96zM300.9 397.9L256 368l0-64 44.9-29.9c2-1.3 4.4-2.1 6.8-2.1c6.8 0 12.3 5.5 12.3 12.3l0 103.4c0 6.8-5.5 12.3-12.3 12.3c-2.4 0-4.8-.7-6.8-2.1z"/></symbol>
+        <symbol id="i-layer-group" viewBox="0 0 576 512"><path d="M264.5 5.2c14.9-6.9 32.1-6.9 47 0l218.6 101c8.5 3.9 13.9 12.4 13.9 21.8s-5.4 17.9-13.9 21.8l-218.6 101c-14.9 6.9-32.1 6.9-47 0L45.9 149.8C37.4 145.8 32 137.3 32 128s5.4-17.9 13.9-21.8L264.5 5.2zM476.9 209.6l53.2 24.6c8.5 3.9 13.9 12.4 13.9 21.8s-5.4 17.9-13.9 21.8l-218.6 101c-14.9 6.9-32.1 6.9-47 0L45.9 277.8C37.4 273.8 32 265.3 32 256s5.4-17.9 13.9-21.8l53.2-24.6 152 70.2c23.4 10.8 50.4 10.8 73.8 0l152-70.2zm-152 198.2l152-70.2 53.2 24.6c8.5 3.9 13.9 12.4 13.9 21.8s-5.4 17.9-13.9 21.8l-218.6 101c-14.9 6.9-32.1 6.9-47 0L45.9 405.8C37.4 401.8 32 393.3 32 384s5.4-17.9 13.9-21.8l53.2-24.6 152 70.2c23.4 10.8 50.4 10.8 73.8 0z"/></symbol>
+        <symbol id="i-xmark" viewBox="0 0 384 512"><path d="M342.6 150.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L192 210.7 86.6 105.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L146.7 256 41.4 361.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L192 301.3 297.4 406.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L237.3 256 342.6 150.6z"/></symbol>
+    </svg>
 
     <div id="app-container">
         <div id="page-play" class="page active">
             <div id="player"></div>
             <div id="image-viewer"></div>
             <div id="click-layer"></div>
-            <div class="center-icon" id="playIcon"><i class="fas fa-play"></i></div>
+            <div class="center-icon" id="playIcon"><svg class="icon"><use href="#i-play"/></svg></div>
 
             <div class="right-controls">
                 <div class="control-item" data-action="open-archive-root">
-                    <div class="control-icon" style="background: rgba(254, 44, 85, 0.15); border: 1px solid rgba(254, 44, 85, 0.4);"><i class="fas fa-folder-open" style="color: #fe2c55; font-size: 18px;"></i></div>
+                    <div class="control-icon" style="background: rgba(254, 44, 85, 0.15); border: 1px solid rgba(254, 44, 85, 0.4);"><svg class="icon" style="color: #fe2c55; font-size: 18px;"><use href="#i-folder-open"/></svg></div>
                     <span class="control-text">收纳</span>
                 </div>
                 <div class="control-item" data-action="delete-current-media">
-                    <div class="control-icon" style="background: rgba(255,255,255,0.08);"><i class="fas fa-trash-alt" style="font-size: 18px;"></i></div>
+                    <div class="control-icon" style="background: rgba(255,255,255,0.08);"><svg class="icon" style="font-size: 18px;"><use href="#i-trash-alt"/></svg></div>
                     <span class="control-text">删除</span>
                 </div>
-                <div class="control-item" data-action="download-media"><div class="control-icon"><i class="fas fa-download"></i></div><span class="control-text">下载</span></div>
-                <div class="control-item" data-action="toggle-mute"><div class="control-icon"><i class="fas fa-volume-mute" id="volIcon"></i></div><span class="control-text" id="volText">静音</span></div>
-                <div class="control-item" data-action="toggle-landscape"><div class="control-icon"><i class="fas fa-mobile-screen-button"></i></div><span class="control-text">旋转</span></div>
-                <div class="control-item" data-action="toggle-fullscreen"><div class="control-icon"><i class="fas fa-expand"></i></div><span class="control-text">全屏</span></div>
-                <div class="control-item" data-action="reload-sources"><div class="control-icon"><i class="fas fa-sync-alt" id="reloadIcon"></i></div><span class="control-text">刷新源</span></div>
+                <div class="control-item" data-action="download-media"><div class="control-icon"><svg class="icon"><use href="#i-download"/></svg></div><span class="control-text">下载</span></div>
+                <div class="control-item" data-action="toggle-mute"><div class="control-icon"><svg class="icon" id="volIcon"><use href="#i-volume-mute"/></svg></div><span class="control-text" id="volText">静音</span></div>
+                <div class="control-item" data-action="toggle-landscape"><div class="control-icon"><svg class="icon"><use href="#i-mobile"/></svg></div><span class="control-text">旋转</span></div>
+                <div class="control-item" data-action="toggle-fullscreen"><div class="control-icon"><svg class="icon"><use href="#i-expand"/></svg></div><span class="control-text">全屏</span></div>
+                <div class="control-item" data-action="reload-sources"><div class="control-icon"><svg class="icon" id="reloadIcon"><use href="#i-sync"/></svg></div><span class="control-text">刷新源</span></div>
             </div>
 
             <div class="progress-container" id="progressBar">
                 <div class="progress-bg"><div class="progress-current" id="progressCurrent"><div class="progress-thumb"></div></div></div>
             </div>
-            <div class="loading-spinner" id="loading"><i class="fas fa-spinner"></i></div>
+            <div class="loading-spinner" id="loading"><svg class="icon icon-spin"><use href="#i-spinner"/></svg></div>
         </div>
 
         <div id="page-files" class="page">
             <div class="source-selector" id="sourceTabs"></div>
             <div class="file-header">
-                <i class="fas fa-arrow-left" data-action="go-up-dir" style="padding:8px;color:#aaa;"></i>
+                <svg class="icon" data-action="go-up-dir" style="padding:8px;color:#aaa;font-size:16px;cursor:pointer;"><use href="#i-arrow-left"/></svg>
                 <div class="breadcrumb" id="breadcrumb">/</div>
                 <div style="display:flex;gap:15px;align-items:center;">
-                     <i class="fas fa-folder-plus" style="font-size:16px;color:#ddd;" data-action="mkdir-prompt"></i>
-                     <i class="fas fa-play-circle" style="font-size:18px;color:var(--primary);" data-action="play-folder"></i>
+                     <svg class="icon" style="font-size:16px;color:#ddd;cursor:pointer;" data-action="mkdir-prompt"><use href="#i-folder-plus"/></svg>
+                     <svg class="icon" style="font-size:18px;color:var(--primary);cursor:pointer;" data-action="play-folder"><use href="#i-play-circle"/></svg>
                 </div>
             </div>
             <div style="padding:8px 12px;border-bottom:1px solid #1a1a1a;">
@@ -221,15 +245,15 @@
     </div>
 
     <nav class="bottom-nav">
-        <div class="nav-item active" id="nav-play"><i class="fas fa-home"></i><span>首页</span></div>
-        <div class="nav-item" data-action="switch-tab" data-tab="files"><i class="fas fa-folder"></i><span>文件</span></div>
-        <div class="nav-item" data-action="switch-tab" data-tab="settings"><i class="fas fa-user"></i><span>我的</span></div>
+        <div class="nav-item active" id="nav-play"><svg class="icon" style="font-size:18px;margin-bottom:2px;"><use href="#i-home"/></svg><span>首页</span></div>
+        <div class="nav-item" data-action="switch-tab" data-tab="files"><svg class="icon" style="font-size:18px;margin-bottom:2px;"><use href="#i-folder"/></svg><span>文件</span></div>
+        <div class="nav-item" data-action="switch-tab" data-tab="settings"><svg class="icon" style="font-size:18px;margin-bottom:2px;"><use href="#i-user"/></svg><span>我的</span></div>
     </nav>
 
     <div class="archive-drawer" id="archiveDrawer">
         <div class="drawer-header">
-            <div class="drawer-title" id="drawerTitle"><span><i class="fas fa-share" style="margin-right:5px;"></i>快速收纳</span></div>
-            <i class="fas fa-chevron-down" data-action="close-archive-drawer" style="padding:5px 10px;font-size:16px;color:#666;"></i>
+            <div class="drawer-title" id="drawerTitle"><span><svg class="icon" style="margin-right:5px;"><use href="#i-share"/></svg>快速收纳</span></div>
+            <svg class="icon" data-action="close-archive-drawer" style="padding:5px 10px;font-size:16px;color:#666;cursor:pointer;"><use href="#i-chevron-down"/></svg>
         </div>
         <div style="padding:0 12px 8px;">
             <input id="archiveSearchInput" class="search-input" type="text" placeholder="搜索可收纳目标...">
@@ -1009,7 +1033,7 @@
             }
             el.innerHTML = filtered.map(f => `
                 <div class="file-item" role="button" tabindex="0" data-path="${encodeURIComponent(f.path)}" data-is-dir="${f.is_dir ? '1' : '0'}">
-                    <i class="file-icon fas ${f.is_dir ? 'fa-folder folder' : 'fa-file-video video'}"></i>
+                    <svg class="file-icon icon" style="font-size:20px;margin-right:12px;color:#666;"><use href="#i-${f.is_dir ? 'folder' : 'file-video'}"/></svg>
                     <div class="file-info"><div class="file-name">${escapeHtml(f.name)}</div><div class="file-meta">${f.is_dir?'-':(f.size/1048576).toFixed(1)+'MB'}</div></div>
                 </div>
             `).join('');
@@ -1138,16 +1162,16 @@
             grid.innerHTML = '<div style="color:#666;font-size:12px;width:100%;">加载中...</div>';
 
             if (state.archivePath === 'root') {
-                title.innerHTML = `<span><i class="fas fa-share" style="margin-right:5px;"></i>快速收纳</span>`;
+                title.innerHTML = `<span><svg class="icon" style="margin-right:5px;"><use href="#i-share"/></svg>快速收纳</span>`;
                 grid.innerHTML = state.quickFolders.map(f => `
                     <div class="slot-btn" data-action="archive-handle-slot" data-type="${escapeHtml(f.type || 'direct')}" data-path="${encodeURIComponent(f.path || '')}" data-name="${encodeURIComponent(f.name || '')}">
                         <span class="slot-icon">${escapeHtml(f.icon || '')}</span>
                         <span class="slot-name">${escapeHtml(f.name || '')}</span>
-                        ${f.type === 'group' ? '<i class="fas fa-layer-group slot-tag"></i>' : ''}
+                        ${f.type === 'group' ? '<svg class="icon slot-tag"><use href="#i-layer-group"/></svg>' : ''}
                     </div>
                 `).join('');
             } else {
-                title.innerHTML = `<span data-action="archive-back-root"><i class="fas fa-arrow-left" style="margin-right:8px;"></i>${escapeHtml(state.archivePath.split('/').pop())}</span>`;
+                title.innerHTML = `<span data-action="archive-back-root"><svg class="icon" style="margin-right:8px;"><use href="#i-arrow-left"/></svg>${escapeHtml(state.archivePath.split('/').pop())}</span>`;
                 try {
                     const currentMedia = state.videoStack[state.currentIndex];
                     const res = await fetch(`/v1/browse?source=${encodeURIComponent(currentMedia.source)}&path=${encodeURIComponent(state.archivePath)}`);
@@ -1266,7 +1290,7 @@
             document.getElementById('accountList').innerHTML = state.sources.map((s, i) => `
                 <div style="background:#222;padding:8px;border-radius:6px;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center;" data-action="settings-account-edit" data-index="${i}">
                     <div style="overflow:hidden;"><div style="font-size:12px;font-weight:bold;">${escapeHtml(s.name || '')}</div><div style="font-size:9px;color:#666;">${escapeHtml(s.url || '')}</div></div>
-                    <i class="fas fa-trash" style="color:#ff3b30;padding:8px;" data-action="settings-account-del" data-name="${encodeURIComponent(s.name || '')}" data-stop-propagation="1"></i>
+                    <svg class="icon" style="color:#ff3b30;padding:8px;font-size:14px;cursor:pointer;" data-action="settings-account-del" data-name="${encodeURIComponent(s.name || '')}" data-stop-propagation="1"><use href="#i-trash"/></svg>
                 </div>`).join('');
             const q = state.uiState.quickFolderSearchQuery;
             const filteredQuickFolders = filterByKeyword(state.quickFolders, q, (f) => `${f.name || ''} ${f.path || ''} ${f.type || ''}`);
@@ -1276,7 +1300,7 @@
                 return `
                 <div style="display:flex;justify-content:space-between;background:#222;padding:8px;border-radius:6px;margin-bottom:5px;font-size:12px;align-items:center;" data-action="settings-folder-edit" data-index="${i}">
                     <div style="display:flex;align-items:center;gap:5px;"><span>${escapeHtml(f.icon || '')}</span><span style="font-weight:bold;">${escapeHtml(f.name || '')}</span>${f.type==='group'?'<span style="font-size:9px;background:#333;padding:2px 4px;">组</span>':''}</div>
-                    <i class="fas fa-times" style="color:#666;padding:5px;" data-action="settings-folder-del" data-index="${i}" data-stop-propagation="1"></i>
+                    <svg class="icon" style="color:#666;padding:5px;font-size:12px;cursor:pointer;" data-action="settings-folder-del" data-index="${i}" data-stop-propagation="1"><use href="#i-xmark"/></svg>
                 </div>`;
             }).join('') || (q ? '<div style="text-align:center;color:#777;padding:8px 0;font-size:12px;">无匹配槽位</div>' : '');
             const sourceSelect = document.getElementById('quickFolderSource');
@@ -1296,12 +1320,12 @@
         function delQuickFolder(idx) { if(!confirm("删除槽位?")) return; state.quickFolders.splice(idx, 1); saveFoldersToServer(); }
         async function fetchSources() { const res = await fetch('/v1/sources'); state.sources = await res.json(); }
         async function delAccount(name) { if(confirm("删除?")) { await fetch(`/v1/sources/${name}`, {method:'DELETE'}); await fetchSources(); renderSettings(); showToast('已删除，请点刷新源生效'); } }
-        function toggleMute() { state.isMuted = !state.isMuted; if(state.dp && state.dp.video) state.dp.video.muted = state.isMuted; const icon = document.getElementById('volIcon'); if(state.isMuted) { icon.className = 'fas fa-volume-mute'; showToast("已静音"); } else { icon.className = 'fas fa-volume-up'; showToast("已开启声音"); } }
+        function toggleMute() { state.isMuted = !state.isMuted; if(state.dp && state.dp.video) state.dp.video.muted = state.isMuted; const icon = document.getElementById('volIcon'); const use = icon && icon.querySelector('use'); if(use) { if(state.isMuted) { use.setAttribute('href','#i-volume-mute'); showToast("已静音"); } else { use.setAttribute('href','#i-volume-up'); showToast("已开启声音"); } } }
         function toggleTranscode(el) { state.useTranscode = el.checked; }
         function toggleFullScreen() { if(!document.fullscreenElement) document.documentElement.requestFullscreen(); else if(document.exitFullscreen) document.exitFullscreen(); }
         async function reloadSources() {
             const icon = document.getElementById('reloadIcon');
-            if(icon) icon.classList.add('fa-spin');
+            if(icon) icon.classList.add('icon-spin');
             try {
                 const res = await fetch('/v1/reload', {method: 'POST'});
                 if(!res.ok) {
@@ -1315,7 +1339,7 @@
             } catch(e) {
                 showToast('网络错误');
             } finally {
-                if(icon) setTimeout(() => icon.classList.remove('fa-spin'), 1000);
+                if(icon) setTimeout(() => icon.classList.remove('icon-spin'), 1000);
             }
         }
         function toggleLandscape() { const p = document.getElementById('player'); if(p.classList.contains('landscape-mode')) { p.classList.remove('landscape-mode'); showToast("竖屏"); } else { p.classList.add('landscape-mode'); showToast("横屏"); } }
