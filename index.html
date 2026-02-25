@@ -568,9 +568,7 @@
             const d = getAccountDraft();
             if (!d.url) return showToast('请先填写地址');
             state.uiState.pickerMode = 'account';
-            if (!state.uiState.selectedPaths.length && d.root_path) {
-                state.uiState.selectedPaths = [normalizePath(d.root_path)];
-            }
+            // 不再用 root_path 预填 selectedPaths，避免根路径残留导致扫描范围过大
             document.getElementById('folderPicker').classList.add('open');
             try {
                 await loadPickerDirs(d.root_path || '/');
@@ -641,6 +639,11 @@
             if (state.uiState.selectedPaths.includes(normalizedPath)) {
                 state.uiState.selectedPaths = state.uiState.selectedPaths.filter(p => p !== normalizedPath);
             } else {
+                // 添加新路径时，移除已选中的父路径（避免父路径导致扫描范围过大）
+                state.uiState.selectedPaths = state.uiState.selectedPaths.filter(p => {
+                    const parent = p.endsWith('/') ? p : p + '/';
+                    return !normalizedPath.startsWith(parent) && p !== '/';
+                });
                 state.uiState.selectedPaths.push(normalizedPath);
             }
             renderFolderPicker();
