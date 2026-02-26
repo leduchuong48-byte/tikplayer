@@ -1,35 +1,77 @@
 # TikPlayer
 
+![TikPlayer UI](images/ui/desktop.png)
+
+[![Docker Pulls](https://img.shields.io/docker/pulls/leduchuong/tikplayer?logo=docker&label=Docker%20Pulls)](https://hub.docker.com/r/leduchuong/tikplayer)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Build: Passing](https://img.shields.io/badge/Build-Passing-brightgreen.svg)](#)
+[![Platform: ARM64/AMD64](https://img.shields.io/badge/Platform-ARM64%2FAMD64-blue.svg)](#)
+
 [中文](README.md)
 
-A lightweight media browsing and playback service based on `FastAPI + AList + HLS`.
+> Better alternative to web-file-player for E-ink devices.
 
-## Features
+TikPlayer is a lightweight NAS/HomeLab media player service focused on simple deployment, hardware-friendly playback, and easy remote access.
 
-- Multi-source AList aggregation
-- HLS and common video playback
-- File browsing, search, rename, delete, create folder
-- Quick-folder shortcuts
-- Docker deployment
+## Why this tool?
 
-## Requirements
+Many self-hosted users need a quick media player stack that just works, but deployment and compatibility often become the bottleneck. TikPlayer keeps the workflow copy-paste friendly and reproducible.
 
-- Docker / Docker Compose (recommended)
-- or Python `3.10+`
+## What the Project Does (Features)
 
-## Quick Start
+- Web UI playback and basic media management
+- Docker-first deployment for NAS/HomeLab
+- Multi-arch support for ARM64 and AMD64
+
+## UI Preview
+
+![Desktop UI](images/ui/desktop.png)
+![Mobile UI](images/ui/mobile.png)
+
+## ⚡️ Quick Start (Run in 3 seconds)
 
 ```bash
-docker compose up -d --build
+docker run -d \
+  --name tikplayer \
+  --restart unless-stopped \
+  -p 1015:8000 \
+  -v ./image:/app/image \
+  -v ./data:/app/data \
+  docker.io/leduchuong/tikplayer:latest
 ```
 
-Default URL: `http://localhost:1015`
+## Docker Compose (Portainer / NAS ready)
 
-## Security & Privacy
+```yaml
+services:
+  tikplayer:
+    image: docker.io/leduchuong/tikplayer:latest
+    container_name: tikplayer
+    restart: unless-stopped
+    ports:
+      - "1015:8000"
+    volumes:
+      - ./image:/app/image
+      - ./data:/app/data
+    shm_size: "2gb"
+```
 
-- Do not commit real credentials or tokens
-- Keep `.env`, `data/token.key`, and `data/tokens.json` out of version control
+## GitHub Topics (pick at least 5)
+
+`#nas` `#homelab` `#selfhosted` `#synology` `#unraid` `#eink` `#automation`
+
+## Where to Get Help
+
+- Issues: `https://github.com/leduchuong48-byte/tikplayer/issues`
+
+## Maintainer
+
+- `@leduchuong48-byte`
 
 ## Disclaimer
 
 By using this project, you acknowledge and agree to the [Disclaimer](DISCLAIMER.md).
+
+## License
+
+MIT, see [LICENSE](LICENSE).

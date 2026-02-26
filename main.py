@@ -56,6 +56,7 @@ TOKEN_KEY_FILE = os.path.join(DATA_DIR, "token.key")
 alist_instances: Dict[str, dict] = {}
 video_pool: List[Dict[str, str]] = []
 scan_lock = asyncio.Lock()
+transcode_semaphore = asyncio.Semaphore(3)  # 最多3个并发转码
 token_cache: Dict[str, Dict[str, object]] = {}
 persisted_tokens: Dict[str, str] = {}
 token_cipher: Optional[Fernet] = None
@@ -337,9 +338,13 @@ class AlistHelper:
 
     @staticmethod
     async def get_file_details(base_url: str, token: str, path: str):
-        async with httpx.AsyncClient() as client:
+        client = shared_http_client or httpx.AsyncClient()
+        try:
             details, _ = await AlistHelper.get_file_details_with_error(client, base_url, token, path)
             return details
+        finally:
+            if client is not shared_http_client:
+                await client.aclose()
 
     @staticmethod
     async def delete_file(base_url: str, token: str, full_path: str) -> tuple[bool, str]:
@@ -349,11 +354,11 @@ class AlistHelper:
         if not dir_path: dir_path = "/"
         payload = {"dir": dir_path, "names": [file_name]}
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(url, headers=AlistHelper.get_headers(token), json=payload, timeout=15.0)
-                data = resp.json()
-                if data.get('code') == 200: return True, "Success"
-                else: return False, data.get('message', 'Unknown Error')
+            client = shared_http_client or httpx.AsyncClient()
+            resp = await client.post(url, headers=AlistHelper.get_headers(token), json=payload, timeout=15.0)
+            data = resp.json()
+            if data.get('code') == 200: return True, "Success"
+            else: return False, data.get('message', 'Unknown Error')
         except Exception as e: return False, str(e)
 
 
@@ -441,6 +446,20 @@ def _build_ffmpeg_cmd(input_url: str, backend: str) -> List[str]:
     ] + common_audio + common_output
 
 
+def _cleanup_process(process):
+    """安全清理 FFmpeg 子进程：kill → wait → 关闭管道"""
+    try:
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=5)
+    except Exception:
+        pass
+    for pipe in (process.stdout, process.stderr, process.stdin):
+        if pipe:
+            try: pipe.close()
+            except Exception: pass
+
+
 def ffmpeg_transcode_generator(input_url: str):
     backends = _parse_transcode_backends()
     last_error = ""
@@ -464,7 +483,6 @@ def ffmpeg_transcode_generator(input_url: str):
                 try:
                     process.wait(timeout=2)
                 except subprocess.TimeoutExpired:
-                    # 还没拿到首块数据，继续读一次
                     retry_chunk = process.stdout.read(32768) if process.stdout else b""
                     if retry_chunk:
                         print(f"✅ Transcode backend in use: {backend}")
@@ -476,14 +494,20 @@ def ffmpeg_transcode_generator(input_url: str):
                             yield chunk
                         return
 
+            # 读 stderr 时加超时保护，防止阻塞
             err = b""
             if process.stderr:
-                err = process.stderr.read()
+                import selectors
+                sel = selectors.DefaultSelector()
+                sel.register(process.stderr, selectors.EVENT_READ)
+                ready = sel.select(timeout=3)
+                if ready:
+                    err = process.stderr.read()
+                sel.close()
             last_error = err.decode("utf-8", errors="ignore")[:500]
             print(f"⚠️ Transcode backend failed: {backend} | {last_error}")
         finally:
-            if process.poll() is None:
-                process.kill()
+            _cleanup_process(process)
 
     raise RuntimeError(f"All transcode backends failed. Last error: {last_error or 'unknown error'}")
 
@@ -568,9 +592,11 @@ async def reload_system_async():
                 if token:
                     new_instances[name] = {"token": token, "url": url, "conf": src}
                     selected_paths = src.get('selected_paths') or [src.get('root_path', '/')]
+                    print(f"📂 扫描源 '{name}' 的选定路径: {selected_paths}")
                     for root in selected_paths:
                         videos = await deep_scan_alist(client, url, token, root, name)
                         new_video_pool.extend(videos)
+                    print(f"   └─ 源 '{name}' 共扫描到 {len(new_video_pool)} 个媒体文件")
                 elif login_err:
                     print(f"Reload login failed for source '{name}': {login_err}")
 
@@ -612,6 +638,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 os.makedirs("image", exist_ok=True)
 app.mount("/image", StaticFiles(directory="image"), name="image")
+os.makedirs("static", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -649,7 +677,8 @@ async def add_source(source: SourceModel):
     else:
         current.append(source.dict())
     save_config(current)
-    return {"status": "success", "message": "Saved. Click refresh source to apply."}
+    asyncio.create_task(reload_system_async())
+    return {"status": "success", "message": "已保存并自动刷新"}
 
 
 @app.post("/v1/source/test-login")
@@ -714,7 +743,8 @@ async def remove_source(name: str):
     current = load_config()
     current = [s for s in current if s['name'] != name]
     save_config(current)
-    return {"status": "success", "message": "Saved. Click refresh source to apply."}
+    asyncio.create_task(reload_system_async())
+    return {"status": "success", "message": "已删除并自动刷新"}
 
 # --- Folder Config API ---
 @app.get("/v1/folders")
@@ -797,7 +827,16 @@ async def stream_video(source: str, path: str):
 @app.get("/v1/transcode")
 async def transcode_video(source: str, path: str):
     raw_url = await _resolve_media_raw_url(source, path)
-    return StreamingResponse(ffmpeg_transcode_generator(raw_url), media_type="video/mp4")
+    acquired = transcode_semaphore._value > 0  # 检查是否有空位
+    if not acquired and transcode_semaphore._value <= 0:
+        raise HTTPException(status_code=503, detail="转码队列已满，请稍后重试")
+    await transcode_semaphore.acquire()
+    def guarded_generator():
+        try:
+            yield from ffmpeg_transcode_generator(raw_url)
+        finally:
+            transcode_semaphore.release()
+    return StreamingResponse(guarded_generator(), media_type="video/mp4")
 
 @app.get("/v1/download")
 async def download_video(source: str, path: str):
@@ -821,7 +860,31 @@ async def delete_video(payload: dict):
         raise HTTPException(status_code=400)
     if source_name not in alist_instances: raise HTTPException(status_code=404)
     instance = alist_instances[source_name]
-    success, msg = await AlistHelper.delete_file(instance['url'], instance['token'], file_path)
+    conf = instance.get('conf', {})
+    token = instance['token']
+
+    # 带重试的删除（处理 SMB 共享锁 STATUS_SHARING_VIOLATION）
+    max_retries = 3
+    for attempt in range(max_retries):
+        success, msg = await AlistHelper.delete_file(instance['url'], token, file_path)
+        if success:
+            break
+        # token 过期 → 刷新后重试
+        if 'token' in msg.lower():
+            new_token, _ = await get_source_token(
+                shared_http_client, instance['url'].rstrip('/').replace('/dav', ''),
+                str(conf.get('username') or ''), str(conf.get('password') or ''), force_refresh=True)
+            if new_token:
+                token = new_token
+                instance['token'] = token
+                continue
+        # SMB 共享锁 → 等待后重试（文件句柄可能还未释放）
+        if 'sharing' in msg.lower() or 'share access' in msg.lower() or 'incompatible' in msg.lower():
+            if attempt < max_retries - 1:
+                await asyncio.sleep(1 * (2 ** attempt))  # 指数退避: 1s, 2s, 4s
+                continue
+        break
+
     if success:
         global video_pool
         video_pool = [v for v in video_pool if not (v['source'] == source_name and v['path'] == file_path)]
@@ -836,20 +899,48 @@ async def move_video(payload: dict):
     dst_dir = str(dst_dir)
     if source_name not in alist_instances: raise HTTPException(status_code=404)
     instance = alist_instances[source_name]
+    conf = instance.get('conf', {})
     base_url = instance['url'].rstrip('/').replace('/dav', '')
     src_dir, file_name = os.path.split(src_path)
-    url = f"{base_url}/api/fs/move"
+    api_url = f"{base_url}/api/fs/move"
     body = {"src_dir": src_dir or "/", "dst_dir": dst_dir, "names": [file_name]}
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(url, headers=AlistHelper.get_headers(instance['token']), json=body, timeout=15.0)
-            data = resp.json()
-            if data.get('code') == 200:
-                global video_pool
-                video_pool = [v for v in video_pool if not (v['source'] == source_name and v['path'] == src_path)]
-                return {"status": "success"}
-            else: raise HTTPException(status_code=500, detail=data.get('message'))
-    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
+
+    async def _do_move(token: str) -> dict:
+        client = shared_http_client or httpx.AsyncClient()
+        resp = await client.post(api_url, headers=AlistHelper.get_headers(token), json=body, timeout=15.0)
+        return resp.json()
+
+    # 带重试的移动（处理 token 过期和 SMB 共享锁）
+    max_retries = 3
+    last_msg = ''
+    token = instance['token']
+    for attempt in range(max_retries):
+        try:
+            data = await _do_move(token)
+        except Exception as e:
+            last_msg = str(e)
+            break
+        if data.get('code') == 200:
+            global video_pool
+            video_pool = [v for v in video_pool if not (v['source'] == source_name and v['path'] == src_path)]
+            return {"status": "success"}
+        last_msg = str(data.get('message', ''))
+        # token 过期 → 刷新后重试
+        if 'token' in last_msg.lower():
+            new_token, _ = await get_source_token(
+                shared_http_client, base_url,
+                str(conf.get('username') or ''), str(conf.get('password') or ''), force_refresh=True)
+            if new_token:
+                token = new_token
+                instance['token'] = token
+                continue
+        # SMB 共享锁 → 指数退避重试
+        if 'sharing' in last_msg.lower() or 'share access' in last_msg.lower() or 'incompatible' in last_msg.lower():
+            if attempt < max_retries - 1:
+                await asyncio.sleep(1 * (2 ** attempt))  # 指数退避: 1s, 2s, 4s
+                continue
+        break
+    raise HTTPException(status_code=500, detail=last_msg)
 
 @app.post("/v1/fs/rename")
 async def rename_file(payload: RenameModel):
@@ -859,11 +950,12 @@ async def rename_file(payload: RenameModel):
     url = f"{base_url}/api/fs/rename"
     body = {"name": payload.new_name, "path": payload.path}
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(url, headers=AlistHelper.get_headers(instance['token']), json=body, timeout=15.0)
-            data = resp.json()
-            if data.get('code') == 200: return {"status": "success"}
-            else: raise HTTPException(status_code=500, detail=data.get('message'))
+        client = shared_http_client or httpx.AsyncClient()
+        resp = await client.post(url, headers=AlistHelper.get_headers(instance['token']), json=body, timeout=15.0)
+        data = resp.json()
+        if data.get('code') == 200: return {"status": "success"}
+        else: raise HTTPException(status_code=500, detail=data.get('message'))
+    except HTTPException: raise
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/v1/fs/mkdir")
@@ -874,15 +966,16 @@ async def make_directory(payload: MkdirModel):
     url = f"{base_url}/api/fs/mkdir"
     body = {"path": payload.path}
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(url, headers=AlistHelper.get_headers(instance['token']), json=body, timeout=15.0)
-            data = resp.json()
-            if data.get('code') == 200: return {"status": "success"}
-            else: raise HTTPException(status_code=500, detail=data.get('message'))
+        client = shared_http_client or httpx.AsyncClient()
+        resp = await client.post(url, headers=AlistHelper.get_headers(instance['token']), json=body, timeout=15.0)
+        data = resp.json()
+        if data.get('code') == 200: return {"status": "success"}
+        else: raise HTTPException(status_code=500, detail=data.get('message'))
+    except HTTPException: raise
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/v1/browse")
-async def browse_directory(source: str, path: str):
+async def browse_directory(source: str, path: str, unfiltered: bool = False):
     if source not in alist_instances: raise HTTPException(status_code=404, detail="Source not found")
     instance = alist_instances[source]
     clean_url = instance['url'].rstrip('/').replace('/dav', '')
@@ -900,17 +993,37 @@ async def browse_directory(source: str, path: str):
                 raise HTTPException(status_code=400, detail=login_err)
     if err:
         raise HTTPException(status_code=502, detail=err)
+    # 获取该源的 selected_paths，用于过滤浏览结果
+    selected_paths = conf.get('selected_paths') or [conf.get('root_path', '/')]
+    norm_selected = [sp.rstrip('/') or '/' for sp in selected_paths]
+
+    def is_path_allowed(item_path: str, is_dir: bool) -> bool:
+        """检查路径是否在 selected_paths 范围内（或是其祖先目录）"""
+        np = item_path.rstrip('/') or '/'
+        for sp in norm_selected:
+            # 文件/目录在选定路径内部
+            if np == sp or np.startswith(sp + '/'):
+                return True
+            # 目录是选定路径的祖先（允许导航到选定路径）
+            if is_dir and sp.startswith(np + '/'):
+                return True
+        return False
+
     result = []
     for item in files:
         is_dir = item['is_dir']
         ext = os.path.splitext(item['name'])[1].lower()
-        if is_dir or ext in MEDIA_EXTENSIONS:
-             result.append({
-                "name": item['name'],
-                "path": os.path.join(path, item['name']).replace('\\', '/'),
-                "is_dir": is_dir,
-                "thumb": item.get('thumb', ''),
-                "size": item.get('size', 0),
-                "type": "folder" if is_dir else ("image" if ext in {'.jpg', '.jpeg', '.png', '.gif', '.webp'} else "video")
-            })
+        if not (is_dir or ext in MEDIA_EXTENSIONS):
+            continue
+        item_path = os.path.join(path, item['name']).replace('\\', '/')
+        if not unfiltered and not is_path_allowed(item_path, is_dir):
+            continue
+        result.append({
+            "name": item['name'],
+            "path": item_path,
+            "is_dir": is_dir,
+            "thumb": item.get('thumb', ''),
+            "size": item.get('size', 0),
+            "type": "folder" if is_dir else ("image" if ext in {'.jpg', '.jpeg', '.png', '.gif', '.webp'} else "video")
+        })
     return result
