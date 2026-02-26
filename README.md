@@ -1,67 +1,77 @@
 # TikPlayer
 
+![TikPlayer UI](images/ui/desktop.png)
+
+[![Docker Pulls](https://img.shields.io/docker/pulls/leduchuong/tikplayer?logo=docker&label=Docker%20Pulls)](https://hub.docker.com/r/leduchuong/tikplayer)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Build: Passing](https://img.shields.io/badge/Build-Passing-brightgreen.svg)](#)
+[![Platform: ARM64/AMD64](https://img.shields.io/badge/Platform-ARM64%2FAMD64-blue.svg)](#)
+
 [English](README_en.md)
 
-基于 `FastAPI + AList + HLS` 的轻量媒体浏览与播放服务，支持从多个 AList 源聚合视频/图片并在网页端管理。
+> Better alternative to web-file-player for E-ink devices.
 
-## 功能
+TikPlayer 是一个面向 NAS/HomeLab 的轻量级视频在线播放与管理服务，重点解决“多终端访问、硬解兼容、部署复杂度高”的问题。
 
-- 多源 AList 配置与统一浏览
-- 视频播放（HLS / 常见视频格式）
-- 文件浏览、目录切换、搜索、重命名、删除、创建目录
-- 快捷收纳槽位（快捷路径）
-- Docker 一键部署
+## Why this tool?（为什么要做它）
 
-## 环境要求
+很多家庭服务器用户只想快速搭一个能跑、好看、可远程访问的视频播放器，但经常被繁琐部署、格式兼容和设备适配问题卡住。TikPlayer 把这些常见问题收敛到一个可复制的 Docker 部署流程里，减少试错成本。
 
-- Docker / Docker Compose（推荐）
-- 或 Python `3.10+`
+## 项目做什么（功能概览）
 
-## 快速开始
+- Web UI 播放与基础媒体管理
+- 面向 Docker/NAS 的快速部署
+- ARM64/AMD64 双架构支持
 
-### 方式一：Docker Compose
+## UI 界面展示
 
-```bash
-docker compose up -d --build
-```
+![Desktop UI](images/ui/desktop.png)
+![Mobile UI](images/ui/mobile.png)
 
-默认访问：`http://localhost:1015`
-
-### 方式二：本地运行
+## ⚡️ Quick Start (Run in 3 seconds)
 
 ```bash
-pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8000
+docker run -d \
+  --name tikplayer \
+  --restart unless-stopped \
+  -p 1015:8000 \
+  -v ./image:/app/image \
+  -v ./data:/app/data \
+  docker.io/leduchuong/tikplayer:latest
 ```
 
-## 配置
+## Docker Compose（Portainer / NAS 可直接粘贴）
 
-1. 复制示例配置：
-
-```bash
-cp .env.example .env
+```yaml
+services:
+  tikplayer:
+    image: docker.io/leduchuong/tikplayer:latest
+    container_name: tikplayer
+    restart: unless-stopped
+    ports:
+      - "1015:8000"
+    volumes:
+      - ./image:/app/image
+      - ./data:/app/data
+    shm_size: "2gb"
 ```
 
-2. 按需填写 `.env` 中的 AList 连接信息。
-3. 如需固定加密密钥，可设置 `ALIST_TOKEN_ENC_KEY`。
+## GitHub Topics（建议至少 5 个）
 
-## 目录说明
+`#nas` `#homelab` `#selfhosted` `#synology` `#unraid` `#eink` `#automation`
 
-- `main.py`：后端 API 与业务逻辑
-- `index.html`：前端页面
-- `data/`：运行期数据（sources/folders/token）
-- `image/`：静态资源
+## 在哪里获得帮助
 
-## 隐私与安全
+- Issues: `https://github.com/leduchuong48-byte/tikplayer/issues`
 
-- 仓库中不应提交真实账号、密码、令牌与私有地址。
-- `.env`、`data/token.key`、`data/tokens.json` 已默认忽略。
-- 发布前请执行一次敏感信息扫描。
+## 维护者与贡献者
+
+- Maintainer: `@leduchuong48-byte`
 
 ## 免责声明
 
 使用本项目即表示你已阅读并同意 [免责声明](DISCLAIMER.md)。
 
-## License
+## 许可证
 
-请按你的发布计划补充许可证（如 MIT）。
+MIT，详见 [LICENSE](LICENSE)。

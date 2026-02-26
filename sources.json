@@ -1,9 +1,23 @@
 [
   {
-    "name": "source-1",
-    "url": "http://your-alist-host:5244",
-    "username": "your_username",
-    "password": "",
-    "root_path": "/"
+    "name": "tgdownloader",
+    "url": "http://192.168.100.56:2018",
+    "username": "vincent08080",
+    "password": "Vincento0o0o",
+    "root_path": "Ldisk/散片"
+  },
+  {
+    "name": "downloads",
+    "url": "http://192.168.100.56:2018",
+    "username": "vincent08080",
+    "password": "vincento0o0o",
+    "root_path": "/Linux/downloads"
+  },
+  {
+    "name": "素材",
+    "url": "http://192.168.100.56:2018",
+    "username": "vincent08080",
+    "password": "vincento0o0o",
+    "root_path": "/N98/素材/x"
   }
 ]
