@@ -1,13 +1,13 @@
 # TikPlayer
 
-![TikPlayer UI](images/ui/desktop.png)
+![TikPlayer UI](https://raw.githubusercontent.com/leduchuong48-byte/tikplayer/main/images/ui/desktop.png)
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/leduchuong/tikplayer?logo=docker&label=Docker%20Pulls)](https://hub.docker.com/r/leduchuong/tikplayer)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Build: Passing](https://img.shields.io/badge/Build-Passing-brightgreen.svg)](#)
 [![Platform: ARM64/AMD64](https://img.shields.io/badge/Platform-ARM64%2FAMD64-blue.svg)](#)
 
-[English](README_en.md)
+[English](https://github.com/leduchuong48-byte/tikplayer/blob/main/README_en.md)
 
 > Better alternative to web-file-player for E-ink devices.
 
@@ -27,11 +27,13 @@ TikPlayer 是一个面向 NAS/HomeLab 的轻量级视频在线播放与管理服
 - Web UI 播放与基础媒体管理
 - 面向 Docker/NAS 的快速部署
 - ARM64/AMD64 双架构支持
+  
+✅ Perfect for Raspberry Pi & Oracle Cloud Free Tier (ARM)
 
 ## UI 界面展示
 
-![Desktop UI](images/ui/desktop.png)
-![Mobile UI](images/ui/mobile.png)
+![Desktop UI](https://raw.githubusercontent.com/leduchuong48-byte/tikplayer/main/images/ui/desktop.png)
+![Mobile UI](https://raw.githubusercontent.com/leduchuong48-byte/tikplayer/main/images/ui/mobile.png)
 
 ## ⚡️ Quick Start (Run in 3 seconds)
 
@@ -45,7 +47,11 @@ docker run -d \
   docker.io/leduchuong/tikplayer:latest
 ```
 
-## Docker Compose（Portainer / NAS 可直接粘贴）
+## For Portainer/Synology Users
+
+Copy this into Portainer stacks and hit Deploy. Done.
+
+## Docker Compose
 
 ```yaml
 services:
@@ -75,8 +81,8 @@ services:
 
 ## 免责声明
 
-使用本项目即表示你已阅读并同意 [免责声明](DISCLAIMER.md)。
+使用本项目即表示你已阅读并同意 [免责声明](https://github.com/leduchuong48-byte/tikplayer/blob/main/DISCLAIMER.md)。
 
 ## 许可证
 
-MIT，详见 [LICENSE](LICENSE)。
+MIT，详见 [LICENSE](https://github.com/leduchuong48-byte/tikplayer/blob/main/LICENSE)。
