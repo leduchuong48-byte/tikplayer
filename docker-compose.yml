@@ -1,6 +1,6 @@
 services:
   tikplayer:
-    image: tikplayer:2.0.0
+    image: leduchuong/tikplayer:2.1
     container_name: tikplayer_v2
     restart: unless-stopped
     ports:
