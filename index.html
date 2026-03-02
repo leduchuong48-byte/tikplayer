@@ -27,8 +27,8 @@
         #page-play { background: #000; overflow: hidden; padding-bottom: 0; }
         
         #player { width: 100%; height: 100%; background: #000; }
-        #player.landscape-mode .art-video { object-fit: contain !important; }
-        .art-video { object-fit: cover; transition: object-fit 0.3s; }
+        #player.landscape-mode .art-video { object-fit: cover !important; }
+        .art-video { object-fit: contain; }
         #image-viewer { width: 100%; height: 100%; display: none; background-size: contain; background-position: center; background-repeat: no-repeat; }
         .art-controls { display: flex !important; }
         #click-layer { position: absolute; top:0; left:0; width:100%; height:100%; z-index:15; }
@@ -60,6 +60,8 @@
         /* Drawers & Modals */
         .archive-drawer, .context-menu { position: fixed; bottom: 0; left: 0; width: 100%; background: #141414; z-index: 2000; border-radius: 12px 12px 0 0; transform: translateY(100%); transition: transform 0.25s cubic-bezier(0.25, 0.8, 0.25, 1); padding: 12px; padding-bottom: calc(30px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; max-height: 70vh; }
         .archive-drawer.open, .context-menu.open { transform: translateY(0); }
+        .archive-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1999; display: none; }
+        .archive-backdrop.open { display: block; }
         
         .drawer-header { display: flex; justify-content: space-between; align-items: center; padding: 0 5px 12px 5px; border-bottom: 1px solid #222; margin-bottom: 10px; }
         .slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 8px; overflow-y: auto; }
@@ -76,7 +78,7 @@
         .action-danger { color: #ff3b30; }
 
         /* File & Settings */
-        .file-header { padding: 10px 15px; background: var(--card-bg); display: flex; gap: 10px; align-items: center; position: sticky; top: 0; z-index: 50; border-bottom: 1px solid #222; }
+        .file-header { padding: 10px 15px; background: var(--card-bg); display: flex; gap: 10px; align-items: center; position: sticky; top: 37px; z-index: 50; border-bottom: 1px solid #222; }
         .breadcrumb { flex: 1; overflow-x: auto; white-space: nowrap; font-size: 12px; color: #888; }
         .file-list { padding: 5px; }
         .file-item { display: flex; align-items: center; padding: 12px 10px; margin-bottom: 4px; background: #1e1e1e; border-radius: 6px; transition: background 0.2s; }
@@ -97,7 +99,7 @@
         .center-icon.show { opacity: 1; }
         @keyframes spin { 100% {transform:rotate(360deg)} }
         
-        .source-selector { display: flex; gap: 6px; padding: 8px 12px; overflow-x: auto; background: var(--bg); border-bottom: 1px solid #111; }
+        .source-selector { display: flex; gap: 6px; padding: 8px 12px; overflow-x: auto; background: var(--bg); border-bottom: 1px solid #111; position: sticky; top: 0; z-index: 51; }
         .source-chip { padding: 5px 12px; background: #1a1a1a; color: #777; border-radius: 14px; font-size: 11px; white-space: nowrap; border: 1px solid #2a2a2a; }
         .source-chip.active { background: #ddd; color: #000; border-color: #ddd; font-weight: 700; }
         .path-chip-wrap { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
@@ -250,10 +252,11 @@
         <div class="nav-item" data-action="switch-tab" data-tab="settings"><svg class="icon" style="font-size:18px;margin-bottom:2px;"><use href="#i-user"/></svg><span>我的</span></div>
     </nav>
 
+    <div class="archive-backdrop" id="archiveBackdrop" data-action="close-archive-drawer"></div>
     <div class="archive-drawer" id="archiveDrawer">
         <div class="drawer-header">
             <div class="drawer-title" id="drawerTitle"><span><svg class="icon" style="margin-right:5px;"><use href="#i-share"/></svg>快速收纳</span></div>
-            <svg class="icon" data-action="close-archive-drawer" style="padding:5px 10px;font-size:16px;color:#666;cursor:pointer;"><use href="#i-chevron-down"/></svg>
+            <div data-action="close-archive-drawer" style="padding:8px 12px;cursor:pointer;display:flex;align-items:center;"><svg class="icon" style="font-size:16px;color:#666;"><use href="#i-chevron-down"/></svg></div>
         </div>
         <div style="padding:0 12px 8px;">
             <input id="archiveSearchInput" class="search-input" type="text" placeholder="搜索可收纳目标...">
@@ -328,7 +331,6 @@
                 playRequestToken: 0,
                 requestToken: 0,
                 preloadInFlight: false,
-                playWatchdogTimer: null,
                 disableSeekReason: ''
             }
         };
@@ -377,7 +379,8 @@
             await fetchSources(); await fetchFolders();
             if(state.sources.length > 0) {
                 state.currentSource = state.sources[0].name;
-                renderSourceTabs(); loadNextVideo(true); browseFile(state.currentSource, '/');
+                const initSrc = state.sources[0]; const initPath = (initSrc.selected_paths && initSrc.selected_paths.length) ? initSrc.selected_paths[0] : (initSrc.root_path || '/');
+                state.currentPath = initPath; renderSourceTabs(); loadNextVideo(true); browseFile(state.currentSource, initPath);
             } else { showToast("请添加源", "info"); switchTab('settings'); }
         };
 
@@ -835,16 +838,31 @@
 
         function resetPlayerUI() {
             clearTimeout(imageTimer); state.isImagePaused = false;
-            if (state.mediaState.playWatchdogTimer) {
-                clearTimeout(state.mediaState.playWatchdogTimer);
-                state.mediaState.playWatchdogTimer = null;
-            }
             state.mediaState.playRequestToken += 1;
+            // 1) 先停 HLS 加载和解码（必须在 video 操作之前）
             if(state.mediaState.hlsInstance) {
-                state.mediaState.hlsInstance.destroy();
+                try {
+                    state.mediaState.hlsInstance.stopLoad();
+                    state.mediaState.hlsInstance.detachMedia();
+                    state.mediaState.hlsInstance.destroy();
+                } catch(e) {}
                 state.mediaState.hlsInstance = null;
             }
-            if(state.dp) { state.dp.destroy(); state.dp = null; }
+            // 2) 停止 video 元素的所有媒体活动
+            if(state.dp && state.dp.video) {
+                try {
+                    state.dp.video.pause();
+                    state.dp.video.muted = true;
+                    state.dp.video.src = '';
+                    state.dp.video.load();
+                    state.dp.video.remove();
+                } catch(e) {}
+            }
+            // 3) 最后销毁 Artplayer
+            if(state.dp) {
+                try { state.dp.destroy(); } catch(e) {}
+                state.dp = null;
+            }
             syncMediaState();
             document.getElementById('player').innerHTML = ''; document.getElementById('player').style.display = 'none';
             document.getElementById('image-viewer').style.display = 'none';
@@ -870,19 +888,21 @@
                 playerDiv.style.display = 'block';
                 let url = (state.useTranscode && !forceDirect) ? media.transcode_url : media.url;
                 state.mediaState.disableSeekReason = (url === media.transcode_url) ? '转码流暂不支持拖动定位，请关闭转码后重试' : '';
-                if(!state.useTranscode && media.recommend_transcode) showToast("⚡ 可开启转码优化播放，当前使用原始流以支持拖动进度条");
+                if(!state.useTranscode && media.recommend_transcode) showToast("可开启转码优化播放");
                 const playToken = ++state.mediaState.playRequestToken;
+                let playbackStarted = false;
                 let recovered = false;
 
+                // 仅在视频尚未开始播放时才触发恢复（参考 LibreTV 架构）
                 const recoverPlayback = (reason) => {
                     if (recovered) return;
                     if (playToken !== state.mediaState.playRequestToken) return;
-                    recovered = true;
-
-                    if (state.mediaState.playWatchdogTimer) {
-                        clearTimeout(state.mediaState.playWatchdogTimer);
-                        state.mediaState.playWatchdogTimer = null;
+                    if (playbackStarted) {
+                        // 已经开始播放后的错误只记录，不重建播放器
+                        console.warn('播放中临时错误(已忽略):', reason);
+                        return;
                     }
+                    recovered = true;
 
                     if ((state.useTranscode && !forceDirect) && media.url) {
                         showToast("转码流加载异常，自动切换原始流");
@@ -892,14 +912,14 @@
                     }
 
                     if (attempt < 1) {
-                        showToast("播放异常，自动重试一次");
+                        showToast("加载异常，自动重试");
                         resetPlayerUI();
                         renderPlayer(media, { forceDirect, attempt: attempt + 1 });
                         return;
                     }
 
-                    console.warn('播放恢复失败，自动切换下一条:', reason);
-                    showToast("当前资源播放失败，自动下一条");
+                    console.warn('加载失败，自动切换下一条:', reason);
+                    showToast("当前资源加载失败，自动下一条");
                     loadNextVideo(true);
                 };
 
@@ -908,7 +928,7 @@
                     container: playerDiv,
                     url: url,
                     autoplay: true,
-                    loop: true,
+                    loop: false,
                     muted: state.isMuted,
                     poster: media.img_url,
                     setting: true,
@@ -916,17 +936,25 @@
                     fullscreenWeb: true,
                     airplay: true,
                     pip: true,
+                    playsInline: true,
                     type: isHls ? 'm3u8' : 'mp4',
                     customType: {
                         m3u8: function (video, playUrl) {
                             if (Hls.isSupported()) {
-                                if (video._hls) video._hls.destroy();
+                                if (video._hls) {
+                                    try { video._hls.stopLoad(); video._hls.detachMedia(); video._hls.destroy(); } catch(e) {}
+                                }
                                 const hls = new Hls({
                                     fragLoadingMaxRetry: 6,
                                     fragLoadingRetryDelay: 1000,
                                     manifestLoadingMaxRetry: 3,
                                     levelLoadingMaxRetry: 4,
-                                    appendErrorMaxRetry: 5
+                                    appendErrorMaxRetry: 5,
+                                    enableWorker: true,
+                                    lowLatencyMode: false,
+                                    backBufferLength: 90,
+                                    maxBufferLength: 30,
+                                    maxBufferHole: 0.5
                                 });
                                 hls.loadSource(playUrl);
                                 hls.attachMedia(video);
@@ -937,15 +965,25 @@
                                 hls.on(Hls.Events.ERROR, function (event, data) {
                                     if (!data.fatal) return;
                                     hlsFatalCount++;
+                                    if (playbackStarted) {
+                                        // 已开始播放后：只做内部恢复，不重建播放器
+                                        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
+                                        else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
+                                        return;
+                                    }
+                                    // 未开始播放：尝试恢复，超过上限则放弃
+                                    if (hlsFatalCount > 3) {
+                                        recoverPlayback('hls-fatal-' + data.type);
+                                        return;
+                                    }
                                     if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
                                         console.warn('HLS网络错误，尝试恢复');
                                         hls.startLoad();
                                     } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
                                         console.warn('HLS媒体错误，尝试恢复');
                                         hls.recoverMediaError();
-                                    } else if (hlsFatalCount > 2) {
-                                        console.error('HLS致命错误，触发播放恢复');
-                                        recoverPlayback('hls-fatal-error');
+                                    } else {
+                                        recoverPlayback('hls-fatal-other');
                                     }
                                 });
                             } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -973,45 +1011,63 @@
                     state.dp.video.setAttribute('autoplay', 'autoplay');
                     state.dp.video.preload = 'auto';
 
-                    if (state.mediaState.playWatchdogTimer) {
-                        clearTimeout(state.mediaState.playWatchdogTimer);
-                    }
-                    state.mediaState.playWatchdogTimer = setTimeout(() => {
-                        recoverPlayback('watchdog-timeout');
-                    }, 12000);
-
+                    // 进度条更新
                     state.dp.video.addEventListener('timeupdate', () => {
-                        if(state.dp.video.duration) {
+                        if(state.dp && state.dp.video && state.dp.video.duration) {
                             document.getElementById('progressCurrent').style.width = (state.dp.video.currentTime / state.dp.video.duration) * 100 + '%';
                         }
                     });
+
+                    // 视频可播放 → 标记 playbackStarted，取消加载状态
                     state.dp.video.addEventListener('canplay', () => {
                         if (playToken !== state.mediaState.playRequestToken) return;
-                        if (state.mediaState.playWatchdogTimer) {
-                            clearTimeout(state.mediaState.playWatchdogTimer);
-                            state.mediaState.playWatchdogTimer = null;
-                        }
+                        playbackStarted = true;
                         setLoading(false);
                         state.dp.play().catch(() => {
                             state.dp.video.muted = true;
-                            state.dp.play().catch((err) => {
-                                recoverPlayback(err && err.message ? err.message : 'autoplay-blocked');
-                            });
+                            state.dp.play().catch(() => {});
                         });
                     }, { once: true });
 
-                    state.dp.video.addEventListener('error', () => {
-                        const mediaError = state.dp.video.error;
-                        const reason = mediaError ? `video-error-${mediaError.code}` : 'video-error';
-                        recoverPlayback(reason);
+                    // playing 事件也标记（双保险，有些浏览器 canplay 不可靠）
+                    state.dp.video.addEventListener('playing', () => {
+                        playbackStarted = true;
+                        setLoading(false);
+                    }, { once: true });
+
+                    // 视频播完 → 手动循环（替代 loop:true，避免 302 redirect 问题）
+                    state.dp.video.addEventListener('ended', () => {
+                        if (playToken !== state.mediaState.playRequestToken) return;
+                        if (state.dp && state.dp.video) {
+                            state.dp.video.currentTime = 0;
+                            state.dp.play().catch(() => {});
+                        }
                     });
-                    state.dp.video.addEventListener('stalled', () => recoverPlayback('stalled'));
+
+                    // video error → 仅在未开始播放时触发恢复
+                    state.dp.video.addEventListener('error', () => {
+                        if (playbackStarted) {
+                            console.warn('播放中 video error (已忽略)');
+                            return;
+                        }
+                        const mediaError = state.dp && state.dp.video ? state.dp.video.error : null;
+                        recoverPlayback(mediaError ? `video-error-${mediaError.code}` : 'video-error');
+                    });
+
+                    // Artplayer 内置重连耗尽 → 仅在未开始播放时触发恢复
                     state.dp.on('error', (error, reconnectTime) => {
-                        console.warn('Artplayer错误, 重连次数:', reconnectTime, error);
-                        if (reconnectTime >= Artplayer.RECONNECT_TIME_MAX) {
+                        console.warn('Artplayer重连:', reconnectTime);
+                        if (!playbackStarted && reconnectTime >= Artplayer.RECONNECT_TIME_MAX) {
                             recoverPlayback('artplayer-reconnect-exhausted');
                         }
                     });
+
+                    // 加载超时提示（不触发重建，只提示用户）
+                    setTimeout(() => {
+                        if (playToken === state.mediaState.playRequestToken && !playbackStarted && !recovered) {
+                            showToast("加载较慢，请耐心等待...");
+                        }
+                    }, 10000);
                 }
             }
         }
@@ -1069,8 +1125,8 @@
         function ctxPlay() { closeContextMenu(); onFileClick(state.ctxFile.path, state.ctxFile.isDir); }
         function ctxArchive() { 
             closeContextMenu(); 
-            // Hack: 临时构造一个 videoStack item 用于 execMove
-            state.videoStack[state.currentIndex] = { source: state.currentSource, raw_path: state.ctxFile.path };
+            // 用独立变量传递文件信息，不污染 videoStack
+            state.ctxMoveTarget = { source: state.currentSource, raw_path: state.ctxFile.path };
             openArchiveDrawer('root'); 
         }
         async function ctxRename() {
@@ -1095,6 +1151,12 @@
         async function ctxDelete() {
             closeContextMenu();
             if(!confirm("确定删除?")) return;
+            // 如果删除的是当前正在播放的文件，先断流释放 SMB 句柄
+            const playing = state.videoStack[state.currentIndex];
+            if (playing && playing.source === state.currentSource && playing.raw_path === state.ctxFile.path) {
+                resetPlayerUI();
+                await new Promise(r => setTimeout(r, 500));
+            }
             try {
                 const res = await fetch('/v1/delete_video', {
                     method: 'POST', headers: {'Content-Type':'application/json'},
@@ -1136,8 +1198,9 @@
             state.uiState.archiveSearchQuery = '';
             renderArchiveDrawer();
             document.getElementById('archiveDrawer').classList.add('open');
+            document.getElementById('archiveBackdrop').classList.add('open');
         }
-        function closeArchiveDrawer() { document.getElementById('archiveDrawer').classList.remove('open'); }
+        function closeArchiveDrawer() { document.getElementById('archiveDrawer').classList.remove('open'); document.getElementById('archiveBackdrop').classList.remove('open'); }
 
         function applyArchiveSearchFilter() {
             const query = state.uiState.archiveSearchQuery;
@@ -1173,8 +1236,8 @@
             } else {
                 title.innerHTML = `<span data-action="archive-back-root"><svg class="icon" style="margin-right:8px;"><use href="#i-arrow-left"/></svg>${escapeHtml(state.archivePath.split('/').pop())}</span>`;
                 try {
-                    const currentMedia = state.videoStack[state.currentIndex];
-                    const res = await fetch(`/v1/browse?source=${encodeURIComponent(currentMedia.source)}&path=${encodeURIComponent(state.archivePath)}`);
+                    const currentMedia = state.ctxMoveTarget || state.videoStack[state.currentIndex];
+                    const res = await fetch(`/v1/browse?source=${encodeURIComponent(currentMedia.source)}&path=${encodeURIComponent(state.archivePath)}&unfiltered=true`);
                     const files = await res.json();
                     const subFolders = files.filter(f => f.is_dir);
                     grid.innerHTML = subFolders.map(f => `<div class="slot-btn" data-action="archive-move" data-path="${encodeURIComponent(f.path || '')}" data-name="${encodeURIComponent(f.name || '')}"><span class="slot-icon">📂</span><span class="slot-name">${escapeHtml(f.name || '')}</span></div>`).join('');
@@ -1194,13 +1257,14 @@
         }
         
         async function execMove(dst, name) {
-            const current = state.videoStack[state.currentIndex];
+            const current = state.ctxMoveTarget || state.videoStack[state.currentIndex];
+            state.ctxMoveTarget = null;
             if(!current) return;
             closeArchiveDrawer(); showToast(`移动至 [${name}]...`);
             try {
                 const res = await fetch('/v1/move_video', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({source: current.source, src_path: current.raw_path, dst_dir: dst}) });
                 if(res.ok) { showToast(`✅ 成功`); if(state.currentTab === 'play') setTimeout(() => loadNextVideo(true), 500); else browseFile(state.currentSource, state.currentPath); } 
-                else showToast("❌ 失败");
+                else { const err = await res.json().catch(() => ({})); showToast(`❌ ${err.detail || '移动失败'}`); }
             } catch(e) { showToast("网络错误"); }
         }
 
@@ -1275,7 +1339,7 @@
                 }
                 await fetchSources();
                 renderSettings();
-                showToast("已保存，请点刷新源生效");
+                showToast("已保存，正在自动刷新...");
                 cancelEditAccount();
             } catch (e) {
                 showToast('网络错误');
@@ -1318,8 +1382,8 @@
         async function fetchFolders() { try { const res = await fetch('/v1/folders'); state.quickFolders = await res.json(); renderSettings(); } catch(e){} }
         async function saveFoldersToServer() { await fetch('/v1/folders', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(state.quickFolders)}); renderSettings(); }
         function delQuickFolder(idx) { if(!confirm("删除槽位?")) return; state.quickFolders.splice(idx, 1); saveFoldersToServer(); }
-        async function fetchSources() { const res = await fetch('/v1/sources'); state.sources = await res.json(); }
-        async function delAccount(name) { if(confirm("删除?")) { await fetch(`/v1/sources/${name}`, {method:'DELETE'}); await fetchSources(); renderSettings(); showToast('已删除，请点刷新源生效'); } }
+        async function fetchSources() { try { const res = await fetch('/v1/sources'); if(!res.ok) throw new Error(); state.sources = await res.json(); } catch(e) { console.warn('fetchSources failed:', e); } }
+        async function delAccount(name) { if(confirm("删除?")) { try { await fetch(`/v1/sources/${encodeURIComponent(name)}`, {method:'DELETE'}); await fetchSources(); renderSettings(); showToast('已删除，正在自动刷新...'); } catch(e) { showToast('删除失败'); } } }
         function toggleMute() { state.isMuted = !state.isMuted; if(state.dp && state.dp.video) state.dp.video.muted = state.isMuted; const icon = document.getElementById('volIcon'); const use = icon && icon.querySelector('use'); if(use) { if(state.isMuted) { use.setAttribute('href','#i-volume-mute'); showToast("已静音"); } else { use.setAttribute('href','#i-volume-up'); showToast("已开启声音"); } } }
         function toggleTranscode(el) { state.useTranscode = el.checked; }
         function toggleFullScreen() { if(!document.fullscreenElement) document.documentElement.requestFullscreen(); else if(document.exitFullscreen) document.exitFullscreen(); }
@@ -1344,7 +1408,7 @@
         }
         function toggleLandscape() { const p = document.getElementById('player'); if(p.classList.contains('landscape-mode')) { p.classList.remove('landscape-mode'); showToast("竖屏"); } else { p.classList.add('landscape-mode'); showToast("横屏"); } }
         function downloadMedia() { const c = state.videoStack[state.currentIndex]; if(c) { const a = document.createElement('a'); a.href = c.download_url; a.click(); showToast("开始下载..."); } }
-        async function deleteCurrentMedia() { const current = state.videoStack[state.currentIndex]; if(!current) return; if(!confirm(`确定删除？`)) return; try { const res = await fetch('/v1/delete_video', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({source: current.source, path: current.raw_path}) }); if(res.ok) { showToast("已删除"); state.videoStack.splice(state.currentIndex, 1); state.currentIndex--; loadNextVideo(true); } else showToast("删除失败"); } catch(e) {} }
+        async function deleteCurrentMedia() { const current = state.videoStack[state.currentIndex]; if(!current) return; if(!confirm(`确定删除？`)) return; resetPlayerUI(); await new Promise(r => setTimeout(r, 500)); try { const res = await fetch('/v1/delete_video', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({source: current.source, path: current.raw_path}) }); if(res.ok) { showToast("已删除"); state.videoStack.splice(state.currentIndex, 1); state.currentIndex--; loadNextVideo(true); } else { const err = await res.json().catch(() => ({})); showToast(`删除失败: ${err.detail || '未知错误'}`); } } catch(e) { showToast("网络错误"); } }
         function startImageTimer() { clearTimeout(imageTimer); imageTimer = setTimeout(() => { if(!state.isImagePaused) loadNextVideo(true); }, 5000); }
         async function preloadNext(expectedRequestToken, expectedIndex) {
             if (state.playMode !== 'random') return;
@@ -1365,7 +1429,7 @@
                 state.mediaState.preloadInFlight = false;
             }
         }
-        function initPlayerControls() { const layer = document.getElementById('click-layer'); layer.addEventListener('touchstart', e => { startY = e.touches[0].clientY; startTime = Date.now(); state.isLongPressing = false; pressTimer = setTimeout(() => { if(state.dp && !state.dp.video.paused) { state.dp.speed(3); showToast("🚀 3倍速"); state.isLongPressing = true; } }, 500); }); layer.addEventListener('touchmove', e => { if(Math.abs(e.touches[0].clientY - startY) > 10) clearTimeout(pressTimer); }); layer.addEventListener('touchend', e => { clearTimeout(pressTimer); if(state.isLongPressing) { if(state.dp) state.dp.speed(1); state.isLongPressing = false; return; } const diff = startY - e.changedTouches[0].clientY; if(Date.now() - startTime < 300 && Math.abs(diff) > 50) { if(diff > 0) loadNextVideo(true); else loadNextVideo(false); } else if (Date.now() - startTime < 300 && Math.abs(diff) < 10) { if(state.videoStack[state.currentIndex].type === 'image') { state.isImagePaused = !state.isImagePaused; if(state.isImagePaused) clearTimeout(imageTimer); else startImageTimer(); } else if(state.dp) state.dp.toggle(); } }); }
+        function initPlayerControls() { const layer = document.getElementById('click-layer'); layer.addEventListener('touchstart', e => { startY = e.touches[0].clientY; startTime = Date.now(); state.isLongPressing = false; pressTimer = setTimeout(() => { if(state.dp && state.dp.video && !state.dp.video.paused) { state.dp.speed(3); showToast("3倍速"); state.isLongPressing = true; } }, 500); }); layer.addEventListener('touchmove', e => { if(Math.abs(e.touches[0].clientY - startY) > 10) clearTimeout(pressTimer); }); layer.addEventListener('touchend', e => { clearTimeout(pressTimer); if(state.isLongPressing) { if(state.dp) state.dp.speed(1); state.isLongPressing = false; return; } const diff = startY - e.changedTouches[0].clientY; if(Date.now() - startTime < 300 && Math.abs(diff) > 50) { if(diff > 0) loadNextVideo(true); else loadNextVideo(false); } else if (Date.now() - startTime < 300 && Math.abs(diff) < 10) { const current = state.videoStack[state.currentIndex]; if(current && current.type === 'image') { state.isImagePaused = !state.isImagePaused; if(state.isImagePaused) clearTimeout(imageTimer); else startImageTimer(); } else if(state.dp) state.dp.toggle(); } }); }
         function initKeyboard() { window.addEventListener('keydown', e => { if(state.currentTab!=='play')return; if(["Space","ArrowUp","ArrowDown"].includes(e.code)) e.preventDefault(); switch(e.code) { case 'Space': if(state.dp) state.dp.toggle(); break; case 'ArrowUp': loadNextVideo(false); break; case 'ArrowDown': loadNextVideo(true); break; } }); }
         function initProgressBar() {
             const bar = document.getElementById('progressBar');
@@ -1473,11 +1537,12 @@
             }, { passive: true });
         }
         function renderSourceTabs() { document.getElementById('sourceTabs').innerHTML = state.sources.map(s => `<div class="source-chip ${s.name === state.currentSource ? 'active' : ''}" data-action="change-source" data-source="${encodeURIComponent(s.name || '')}">${escapeHtml(s.name || '')}</div>`).join(''); initA11yButtons(); }
-        function changeSource(name) { state.currentSource = name; state.currentPath = '/'; renderSourceTabs(); browseFile(name, '/'); }
-        function onFileClick(path, isDir) { if(isDir) { state.currentPath = path; browseFile(state.currentSource, path); } else { if (state.abortController.browseFile) state.abortController.browseFile.abort(); if (state.abortController.loadNextVideo) state.abortController.loadNextVideo.abort(); const media = { url: `/v1/stream?source=${state.currentSource}&path=${encodeURIComponent(path)}`, transcode_url: `/v1/transcode?source=${state.currentSource}&path=${encodeURIComponent(path)}`, download_url: `/v1/download?source=${state.currentSource}&path=${encodeURIComponent(path)}`, source: state.currentSource, raw_path: path, type: 'video' }; state.videoStack.splice(state.currentIndex + 1, 0, media); state.currentIndex++; state.playMode = 'random'; syncMediaState(); switchTab('play'); renderPlayer(media); } }
+        function changeSource(name) { state.currentSource = name; const src = state.sources.find(s => s.name === name); const startPath = (src && src.selected_paths && src.selected_paths.length) ? src.selected_paths[0] : (src && src.root_path ? src.root_path : '/'); state.currentPath = startPath; renderSourceTabs(); browseFile(name, startPath); }
+        function onFileClick(path, isDir) { if(isDir) { state.currentPath = path; browseFile(state.currentSource, path); } else { if (state.abortController.browseFile) state.abortController.browseFile.abort(); if (state.abortController.loadNextVideo) state.abortController.loadNextVideo.abort(); resetPlayerUI(); const media = { url: `/v1/stream?source=${state.currentSource}&path=${encodeURIComponent(path)}`, transcode_url: `/v1/transcode?source=${state.currentSource}&path=${encodeURIComponent(path)}`, download_url: `/v1/download?source=${state.currentSource}&path=${encodeURIComponent(path)}`, source: state.currentSource, raw_path: path, type: 'video' }; state.videoStack.splice(state.currentIndex + 1, 0, media); state.currentIndex++; state.playMode = 'random'; syncMediaState(); switchTab('play'); renderPlayer(media); } }
         function goUpDir() { if(state.currentPath === '/') return; const p = state.currentPath.split('/'); p.pop(); state.currentPath = p.length === 1 ? '/' : p.join('/'); browseFile(state.currentSource, state.currentPath); }
-        function playFolder() { if(!state.currentFileList) return; const videos = state.currentFileList.filter(f => !f.is_dir).map(f => ({ url: `/v1/stream?source=${state.currentSource}&path=${encodeURIComponent(f.path)}`, transcode_url: `/v1/transcode?source=${state.currentSource}&path=${encodeURIComponent(f.path)}`, download_url: `/v1/download?source=${state.currentSource}&path=${encodeURIComponent(f.path)}`, source: state.currentSource, raw_path: f.path, type: 'video', name: f.name })); if(videos.length === 0) return showToast("无视频"); state.playMode = 'folder'; state.videoStack = videos; state.currentIndex = 0; switchTab('play'); renderPlayer(videos[0]); showToast(`播放 ${videos.length} 个视频`); }
-        function showToast(msg, type="info") { const t = document.getElementById('toast'); t.innerHTML = msg; t.style.opacity = 1; setTimeout(() => t.style.opacity = 0, 2000); }
+        function playFolder() { if(!state.currentFileList) return; const videos = state.currentFileList.filter(f => !f.is_dir).map(f => ({ url: `/v1/stream?source=${state.currentSource}&path=${encodeURIComponent(f.path)}`, transcode_url: `/v1/transcode?source=${state.currentSource}&path=${encodeURIComponent(f.path)}`, download_url: `/v1/download?source=${state.currentSource}&path=${encodeURIComponent(f.path)}`, source: state.currentSource, raw_path: f.path, type: 'video', name: f.name })); if(videos.length === 0) return showToast("无视频"); resetPlayerUI(); state.playMode = 'folder'; state.videoStack = videos; state.currentIndex = 0; switchTab('play'); renderPlayer(videos[0]); showToast(`播放 ${videos.length} 个视频`); }
+        let _toastTimer = null;
+        function showToast(msg, type="info") { const t = document.getElementById('toast'); t.textContent = msg; t.style.opacity = 1; if(_toastTimer) clearTimeout(_toastTimer); _toastTimer = setTimeout(() => { t.style.opacity = 0; _toastTimer = null; }, 2000); }
     </script>
 </body>
 </html>

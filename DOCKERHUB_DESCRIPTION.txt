@@ -1,0 +1,1 @@
+🎬 Lightweight self-hosted NAS player for AList/OpenList with stable seeking and playback. 🚀

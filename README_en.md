@@ -13,6 +13,11 @@
 
 TikPlayer is a lightweight NAS/HomeLab media player service focused on simple deployment, hardware-friendly playback, and easy remote access.
 
+## Release Notes
+
+- `v2.1`: Fixed playback issues when dragging the seek bar.
+- `v2.1`: Improved overall player stability and OpenList/AList link stability.
+
 ## Why this tool?
 
 Many self-hosted users need a quick media player stack that just works, but deployment and compatibility often become the bottleneck. TikPlayer keeps the workflow copy-paste friendly and reproducible.
