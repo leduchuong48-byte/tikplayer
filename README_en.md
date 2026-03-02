@@ -3,7 +3,7 @@
 ![TikPlayer UI](https://raw.githubusercontent.com/leduchuong48-byte/tikplayer/main/images/ui/desktop.png)
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/leduchuong/tikplayer?logo=docker&label=Docker%20Pulls)](https://hub.docker.com/r/leduchuong/tikplayer)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/leduchuong48-byte/tikplayer/blob/main/LICENSE)
 [![Build: Passing](https://img.shields.io/badge/Build-Passing-brightgreen.svg)](#)
 [![Platform: ARM64/AMD64](https://img.shields.io/badge/Platform-ARM64%2FAMD64-blue.svg)](#)
 
