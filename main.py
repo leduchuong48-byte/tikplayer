@@ -8,8 +8,9 @@ import httpx
 import asyncio
 import urllib.parse
 import subprocess
+from collections import deque
 from typing import List, Dict, Optional
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import RedirectResponse, HTMLResponse, StreamingResponse, FileResponse
@@ -27,6 +28,7 @@ class SourceModel(BaseModel):
     password: str = ""
     root_path: str = "/"
     selected_paths: List[str] = []
+    random_enabled: bool = True
 
 
 class SourceAuthModel(BaseModel):
@@ -61,12 +63,60 @@ token_cache: Dict[str, Dict[str, object]] = {}
 persisted_tokens: Dict[str, str] = {}
 token_cipher: Optional[Fernet] = None
 shared_http_client: Optional[httpx.AsyncClient] = None
+stale_prune_task: Optional[asyncio.Task] = None
+reload_state_lock = asyncio.Lock()
+reload_worker_task: Optional[asyncio.Task] = None
+reload_state: Dict[str, object] = {
+    "is_refreshing": False,
+    "queue_size": 0,
+    "active_job_id": 0,
+    "job_seq": 0,
+    "progress_percent": 0.0,
+    "progress_stage": "idle",
+    "progress_detail": "",
+    "progress_completed_units": 0,
+    "progress_total_units": 0,
+    "sources_total": 0,
+    "sources_done": 0,
+    "paths_total": 0,
+    "paths_done": 0,
+    "current_source": "",
+    "current_path": "",
+    "last_started_ts": None,
+    "last_finished_ts": None,
+    "last_duration_ms": 0.0,
+    "last_result": "idle",
+    "last_error": "",
+    "last_reason": "",
+    "total_requested": 0,
+    "total_completed": 0,
+    "total_failed": 0,
+}
+
+STREAM_EVENTS_MAX = 5000
+stream_events = deque(maxlen=STREAM_EVENTS_MAX)
+stream_counters: Dict[str, object] = {
+    "resolve_attempts": 0,
+    "resolve_success": 0,
+    "resolve_fail": 0,
+    "fail_reasons": {},
+    "evicted_stale": 0,
+    "last_prune": {
+        "ts": None,
+        "sample_size": 0,
+        "checked": 0,
+        "removed": 0,
+        "skipped": 0,
+    },
+}
 
 MEDIA_EXTENSIONS = {
     '.mp4', '.mkv', '.mov', '.avi', '.flv', '.webm', '.m3u8', '.ts', '.wmv',
     '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'
 }
 NATIVE_FORMATS = ('.mp4', '.webm', '.mov')
+APP_NAME = "Tikplayer"
+APP_VERSION = "2.2"
 
 load_dotenv()
 
@@ -99,6 +149,37 @@ def _apply_env_overrides(sources: List[dict]) -> List[dict]:
         resolved_sources.append(updated)
 
     return resolved_sources
+
+
+def _source_random_enabled(source_conf: dict) -> bool:
+    raw = source_conf.get("random_enabled", True)
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, (int, float)):
+        return raw != 0
+    if isinstance(raw, str):
+        lowered = raw.strip().lower()
+        if lowered in {"0", "false", "no", "off"}:
+            return False
+        if lowered in {"1", "true", "yes", "on"}:
+            return True
+    return True
+
+
+def _selected_paths_from_conf(source_conf: dict) -> List[str]:
+    raw_paths = source_conf.get("selected_paths") or [source_conf.get("root_path", "/")]
+    normalized: List[str] = []
+    for raw in raw_paths:
+        np = _normalize_media_path(str(raw or "/")).rstrip("/") or "/"
+        if np not in normalized:
+            normalized.append(np)
+    return normalized or ["/"]
+
+
+def _path_in_scope(path: str, scope_path: str) -> bool:
+    np = _normalize_media_path(path).rstrip("/") or "/"
+    sp = _normalize_media_path(scope_path).rstrip("/") or "/"
+    return np == sp or np.startswith(sp + "/")
 
 
 def _token_cache_key(base_url: str, username: str, password: str) -> str:
@@ -258,7 +339,7 @@ class AlistHelper:
         return {
             "Authorization": token,
             "Content-Type": "application/json",
-            "User-Agent": "DeerPlayer/Pro"
+            "User-Agent": f"{APP_NAME}/{APP_VERSION}"
         }
 
     @staticmethod
@@ -575,11 +656,96 @@ async def deep_scan_alist(client: httpx.AsyncClient, base_url: str, token: str, 
                     })
     return results
 
-async def reload_system_async():
+def _reload_snapshot_unlocked() -> dict:
+    return {
+        "is_refreshing": bool(reload_state.get("is_refreshing", False)),
+        "queue_size": int(reload_state.get("queue_size", 0)),
+        "active_job_id": int(reload_state.get("active_job_id", 0)),
+        "job_seq": int(reload_state.get("job_seq", 0)),
+        "progress_percent": float(reload_state.get("progress_percent", 0.0)),
+        "progress_stage": str(reload_state.get("progress_stage", "idle")),
+        "progress_detail": str(reload_state.get("progress_detail", "")),
+        "progress_completed_units": int(reload_state.get("progress_completed_units", 0)),
+        "progress_total_units": int(reload_state.get("progress_total_units", 0)),
+        "sources_total": int(reload_state.get("sources_total", 0)),
+        "sources_done": int(reload_state.get("sources_done", 0)),
+        "paths_total": int(reload_state.get("paths_total", 0)),
+        "paths_done": int(reload_state.get("paths_done", 0)),
+        "current_source": str(reload_state.get("current_source", "")),
+        "current_path": str(reload_state.get("current_path", "")),
+        "last_started_ts": reload_state.get("last_started_ts"),
+        "last_finished_ts": reload_state.get("last_finished_ts"),
+        "last_duration_ms": float(reload_state.get("last_duration_ms", 0.0)),
+        "last_result": str(reload_state.get("last_result", "idle")),
+        "last_error": str(reload_state.get("last_error", "")),
+        "last_reason": str(reload_state.get("last_reason", "")),
+        "total_requested": int(reload_state.get("total_requested", 0)),
+        "total_completed": int(reload_state.get("total_completed", 0)),
+        "total_failed": int(reload_state.get("total_failed", 0)),
+    }
+
+
+async def _reload_set_progress(
+    stage: str,
+    detail: str = "",
+    *,
+    total_units: Optional[int] = None,
+    completed_units: Optional[int] = None,
+    sources_total: Optional[int] = None,
+    sources_done: Optional[int] = None,
+    paths_total: Optional[int] = None,
+    paths_done: Optional[int] = None,
+    current_source: Optional[str] = None,
+    current_path: Optional[str] = None,
+) -> None:
+    async with reload_state_lock:
+        if total_units is not None:
+            reload_state["progress_total_units"] = max(1, int(total_units))
+        if completed_units is not None:
+            reload_state["progress_completed_units"] = max(0, int(completed_units))
+        if sources_total is not None:
+            reload_state["sources_total"] = max(0, int(sources_total))
+        if sources_done is not None:
+            reload_state["sources_done"] = max(0, int(sources_done))
+        if paths_total is not None:
+            reload_state["paths_total"] = max(0, int(paths_total))
+        if paths_done is not None:
+            reload_state["paths_done"] = max(0, int(paths_done))
+        if current_source is not None:
+            reload_state["current_source"] = str(current_source)
+        if current_path is not None:
+            reload_state["current_path"] = str(current_path)
+        reload_state["progress_stage"] = str(stage or "running")
+        reload_state["progress_detail"] = str(detail or "")
+
+        total = max(1, int(reload_state.get("progress_total_units", 1)))
+        completed = min(total, max(0, int(reload_state.get("progress_completed_units", 0))))
+        reload_state["progress_percent"] = round(min(99.0, (completed / total) * 100.0), 2)
+
+
+async def _run_reload_once() -> None:
     global alist_instances, video_pool
-    if scan_lock.locked(): return
     async with scan_lock:
         sources = load_config()
+        planned_paths = sum(len(_selected_paths_from_conf(src)) for src in sources if _source_random_enabled(src))
+        total_units = max(2, 1 + len(sources) + planned_paths + 1)
+        completed_units = 0
+        sources_done = 0
+        paths_done = 0
+
+        await _reload_set_progress(
+            stage="preparing",
+            detail=f"准备扫描 {len(sources)} 个源",
+            total_units=total_units,
+            completed_units=completed_units,
+            sources_total=len(sources),
+            sources_done=sources_done,
+            paths_total=planned_paths,
+            paths_done=paths_done,
+            current_source="",
+            current_path="",
+        )
+
         new_instances = {}
         new_video_pool = []
         async with httpx.AsyncClient() as client:
@@ -588,20 +754,115 @@ async def reload_system_async():
                 url = src['url']
                 username = src.get('username') or ""
                 password = src.get('password') or ""
+                selected_paths = _selected_paths_from_conf(src)
+                random_enabled = _source_random_enabled(src)
+
                 token, login_err = await get_source_token(client, url, username, password, verify_cached=True)
+                sources_done += 1
+                completed_units += 1
+                await _reload_set_progress(
+                    stage="login",
+                    detail=f"{name} 登录{'成功' if token else '失败'}",
+                    completed_units=completed_units,
+                    sources_done=sources_done,
+                    paths_done=paths_done,
+                    current_source=name,
+                    current_path="",
+                )
+
                 if token:
-                    new_instances[name] = {"token": token, "url": url, "conf": src}
-                    selected_paths = src.get('selected_paths') or [src.get('root_path', '/')]
+                    normalized_conf = dict(src)
+                    normalized_conf["selected_paths"] = selected_paths
+                    normalized_conf["random_enabled"] = random_enabled
+                    new_instances[name] = {"token": token, "url": url, "conf": normalized_conf}
+                    if not random_enabled:
+                        await _reload_set_progress(
+                            stage="skipped",
+                            detail=f"{name} 已禁用随机，跳过扫描",
+                            completed_units=completed_units,
+                            sources_done=sources_done,
+                            paths_done=paths_done,
+                            current_source=name,
+                            current_path="",
+                        )
+                        continue
+                    source_count = 0
                     print(f"📂 扫描源 '{name}' 的选定路径: {selected_paths}")
                     for root in selected_paths:
-                        videos = await deep_scan_alist(client, url, token, root, name)
+                        await _reload_set_progress(
+                            stage="scanning",
+                            detail=f"{name} 扫描 {root}",
+                            completed_units=completed_units,
+                            sources_done=sources_done,
+                            paths_done=paths_done,
+                            current_source=name,
+                            current_path=root,
+                        )
+                        try:
+                            videos = await deep_scan_alist(client, url, token, root, name)
+                        except Exception as e:
+                            print(f"Reload scan failed for source '{name}' path '{root}': {e}")
+                            videos = []
                         new_video_pool.extend(videos)
-                    print(f"   └─ 源 '{name}' 共扫描到 {len(new_video_pool)} 个媒体文件")
-                elif login_err:
-                    print(f"Reload login failed for source '{name}': {login_err}")
+                        source_count += len(videos)
+                        paths_done += 1
+                        completed_units += 1
+                        await _reload_set_progress(
+                            stage="scanning",
+                            detail=f"{name} 完成 {root} (+{len(videos)})",
+                            completed_units=completed_units,
+                            sources_done=sources_done,
+                            paths_done=paths_done,
+                            current_source=name,
+                            current_path=root,
+                        )
+                    print(f"   └─ 源 '{name}' 共扫描到 {source_count} 个媒体文件")
+                else:
+                    if login_err:
+                        print(f"Reload login failed for source '{name}': {login_err}")
+                    skipped_paths = len(selected_paths) if random_enabled else 0
+                    paths_done += skipped_paths
+                    completed_units += skipped_paths
+                    await _reload_set_progress(
+                        stage="skipped",
+                        detail=f"{name} 登录失败，跳过 {skipped_paths} 路径",
+                        completed_units=completed_units,
+                        sources_done=sources_done,
+                        paths_done=paths_done,
+                            current_source=name,
+                            current_path="",
+                        )
+
+        # 同一后端路径仅保留一条，避免多源重叠导致重复随机
+        deduped_pool: List[Dict[str, str]] = []
+        seen_keys = set()
+        for media in new_video_pool:
+            src_name = str(media.get("source") or "")
+            media_path = _normalize_media_path(str(media.get("path") or "/"))
+            clean_base = str(new_instances.get(src_name, {}).get("url", "")).rstrip('/').replace('/dav', '')
+            key = f"{clean_base}|{media_path}"
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            if media.get("path") != media_path:
+                media = dict(media)
+                media["path"] = media_path
+            deduped_pool.append(media)
+        if len(deduped_pool) != len(new_video_pool):
+            print(f"🔁 去重随机池: {len(new_video_pool)} -> {len(deduped_pool)}")
+        new_video_pool = deduped_pool
+
+        await _reload_set_progress(
+            stage="finalizing",
+            detail=f"应用刷新结果，媒体总数 {len(new_video_pool)}",
+            completed_units=max(completed_units, total_units - 1),
+            sources_done=sources_done,
+            paths_done=paths_done,
+            current_source="",
+            current_path="",
+        )
 
         alist_instances = new_instances
-
         if new_video_pool:
             random.shuffle(new_video_pool)
             video_pool = new_video_pool
@@ -610,10 +871,216 @@ async def reload_system_async():
         else:
             video_pool = []
 
+
+async def _reload_worker_loop() -> None:
+    global reload_worker_task
+    while True:
+        async with reload_state_lock:
+            if int(reload_state.get("queue_size", 0)) <= 0:
+                reload_state["is_refreshing"] = False
+                reload_state["progress_stage"] = "idle"
+                reload_state["progress_detail"] = ""
+                reload_worker_task = None
+                return
+            reload_state["queue_size"] = int(reload_state.get("queue_size", 0)) - 1
+            reload_state["is_refreshing"] = True
+            reload_state["job_seq"] = int(reload_state.get("job_seq", 0)) + 1
+            reload_state["active_job_id"] = int(reload_state["job_seq"])
+            reload_state["last_started_ts"] = int(time.time())
+            reload_state["last_error"] = ""
+            reload_state["last_result"] = "running"
+            reload_state["progress_percent"] = 0.0
+            reload_state["progress_stage"] = "queued"
+            reload_state["progress_detail"] = "等待执行"
+            reload_state["progress_completed_units"] = 0
+            reload_state["progress_total_units"] = 1
+            reload_state["current_source"] = ""
+            reload_state["current_path"] = ""
+            reload_state["sources_total"] = 0
+            reload_state["sources_done"] = 0
+            reload_state["paths_total"] = 0
+            reload_state["paths_done"] = 0
+
+        started = time.perf_counter()
+        err = ""
+        try:
+            await _run_reload_once()
+        except Exception as e:
+            err = str(e)
+            print(f"Reload job failed: {err}")
+
+        duration_ms = round((time.perf_counter() - started) * 1000.0, 2)
+        async with reload_state_lock:
+            reload_state["last_finished_ts"] = int(time.time())
+            reload_state["last_duration_ms"] = duration_ms
+            reload_state["is_refreshing"] = False
+            reload_state["progress_percent"] = 100.0
+            total_units = max(1, int(reload_state.get("progress_total_units", 1)))
+            reload_state["progress_completed_units"] = total_units
+            if err:
+                reload_state["last_error"] = err
+                reload_state["last_result"] = "failed"
+                reload_state["progress_stage"] = "failed"
+                reload_state["progress_detail"] = err[:200]
+                reload_state["total_failed"] = int(reload_state.get("total_failed", 0)) + 1
+            else:
+                reload_state["last_result"] = "success"
+                reload_state["progress_stage"] = "completed"
+                reload_state["progress_detail"] = "完成"
+                reload_state["total_completed"] = int(reload_state.get("total_completed", 0)) + 1
+
+
+async def request_reload(reason: str = "manual", dedupe: bool = False) -> dict:
+    global reload_worker_task
+    accepted = True
+    async with reload_state_lock:
+        if dedupe and (bool(reload_state.get("is_refreshing", False)) or int(reload_state.get("queue_size", 0)) > 0):
+            accepted = False
+        else:
+            reload_state["queue_size"] = int(reload_state.get("queue_size", 0)) + 1
+            reload_state["total_requested"] = int(reload_state.get("total_requested", 0)) + 1
+            reload_state["last_reason"] = str(reason or "manual")
+
+        if reload_worker_task is None or reload_worker_task.done():
+            reload_worker_task = asyncio.create_task(_reload_worker_loop())
+
+        snapshot = _reload_snapshot_unlocked()
+
+    snapshot["accepted"] = accepted
+    snapshot["reason"] = str(reason or "manual")
+    return snapshot
+
+
+async def get_reload_state_snapshot() -> dict:
+    async with reload_state_lock:
+        return _reload_snapshot_unlocked()
+
+
+async def reload_system_async():
+    await request_reload(reason="legacy", dedupe=True)
+
+
+def _record_stream_result(ok: bool, source: str, reason: str = "") -> None:
+    now = time.time()
+    stream_events.append({
+        "ts": now,
+        "ok": bool(ok),
+        "source": str(source or ""),
+        "reason": str(reason or ""),
+    })
+    stream_counters["resolve_attempts"] = int(stream_counters.get("resolve_attempts", 0)) + 1
+    if ok:
+        stream_counters["resolve_success"] = int(stream_counters.get("resolve_success", 0)) + 1
+    else:
+        stream_counters["resolve_fail"] = int(stream_counters.get("resolve_fail", 0)) + 1
+        fail_reasons = stream_counters.get("fail_reasons")
+        if not isinstance(fail_reasons, dict):
+            fail_reasons = {}
+            stream_counters["fail_reasons"] = fail_reasons
+        key = str(reason or "unknown")
+        fail_reasons[key] = int(fail_reasons.get(key, 0)) + 1
+
+
+def _stream_health_snapshot(window_sec: int) -> dict:
+    now = time.time()
+    cutoff = now - max(60, int(window_sec))
+    recent = [evt for evt in stream_events if float(evt.get("ts", 0.0)) >= cutoff]
+    recent_total = len(recent)
+    recent_fail = [evt for evt in recent if not evt.get("ok")]
+    reason_counter: Dict[str, int] = {}
+    for evt in recent_fail:
+        reason = str(evt.get("reason") or "unknown")
+        reason_counter[reason] = int(reason_counter.get(reason, 0)) + 1
+
+    fail_rate = 0.0
+    if recent_total > 0:
+        fail_rate = round((len(recent_fail) / recent_total) * 100.0, 2)
+
+    tail = []
+    for evt in recent_fail[-20:]:
+        tail.append({
+            "ts": int(float(evt.get("ts", 0.0))),
+            "source": str(evt.get("source") or ""),
+            "reason": str(evt.get("reason") or ""),
+        })
+
+    return {
+        "window_sec": int(window_sec),
+        "window_total": recent_total,
+        "window_fail": len(recent_fail),
+        "window_fail_rate_pct": fail_rate,
+        "window_fail_reasons": reason_counter,
+        "window_fail_tail": tail,
+        "resolve_attempts": int(stream_counters.get("resolve_attempts", 0)),
+        "resolve_success": int(stream_counters.get("resolve_success", 0)),
+        "resolve_fail": int(stream_counters.get("resolve_fail", 0)),
+        "fail_reasons_total": stream_counters.get("fail_reasons", {}),
+        "evicted_stale": int(stream_counters.get("evicted_stale", 0)),
+        "last_prune": stream_counters.get("last_prune", {}),
+    }
+
+
+async def _prune_stale_media_once(sample_size: int = 120) -> dict:
+    if shared_http_client is None:
+        return {"sample_size": int(sample_size), "checked": 0, "removed": 0, "skipped": 0, "note": "http client not ready"}
+    if scan_lock.locked():
+        return {"sample_size": int(sample_size), "checked": 0, "removed": 0, "skipped": 0, "note": "scan in progress"}
+    if not video_pool:
+        return {"sample_size": int(sample_size), "checked": 0, "removed": 0, "skipped": 0, "note": "empty pool"}
+
+    sample_size = max(10, min(int(sample_size), 1000))
+    snapshot = list(video_pool)
+    candidates = random.sample(snapshot, min(sample_size, len(snapshot)))
+    checked = 0
+    removed = 0
+    skipped = 0
+
+    for media in candidates:
+        source = str(media.get("source") or "")
+        path = str(media.get("path") or "")
+        if not source or not path or source not in alist_instances:
+            skipped += 1
+            continue
+        checked += 1
+        exists, err = await _probe_media_exists(alist_instances[source], path)
+        if err:
+            continue
+        if exists is False:
+            _evict_media_from_pool(source, _normalize_media_path(path))
+            removed += 1
+
+    stream_counters["last_prune"] = {
+        "ts": int(time.time()),
+        "sample_size": sample_size,
+        "checked": checked,
+        "removed": removed,
+        "skipped": skipped,
+    }
+    return {"sample_size": sample_size, "checked": checked, "removed": removed, "skipped": skipped}
+
+
+async def periodic_stale_prune_loop() -> None:
+    interval = max(120, int(os.getenv("STALE_PRUNE_INTERVAL_SEC", "900")))
+    sample_size = max(10, min(int(os.getenv("STALE_PRUNE_SAMPLE_SIZE", "120")), 1000))
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            result = await _prune_stale_media_once(sample_size)
+            if int(result.get("checked", 0)) > 0 or int(result.get("removed", 0)) > 0:
+                print(
+                    "Periodic stale prune: "
+                    f"sample={result.get('sample_size')} checked={result.get('checked')} "
+                    f"removed={result.get('removed')} skipped={result.get('skipped')}"
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            print(f"Periodic stale prune failed: {e}")
+
 # --- API ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global shared_http_client
+    global shared_http_client, stale_prune_task, reload_worker_task
     os.makedirs("image", exist_ok=True)
     os.makedirs(DATA_DIR, exist_ok=True)
     _load_or_create_token_cipher()
@@ -629,8 +1096,19 @@ async def lifespan(app: FastAPI):
         timeout=httpx.Timeout(connect=5.0, read=20.0, write=20.0, pool=5.0),
         follow_redirects=True,
     )
-    asyncio.create_task(reload_system_async())
+    await request_reload(reason="startup", dedupe=True)
+    stale_prune_task = asyncio.create_task(periodic_stale_prune_loop())
     yield
+    if stale_prune_task is not None:
+        stale_prune_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await stale_prune_task
+        stale_prune_task = None
+    if reload_worker_task is not None and not reload_worker_task.done():
+        reload_worker_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await reload_worker_task
+        reload_worker_task = None
     if shared_http_client is not None:
         await shared_http_client.aclose()
         shared_http_client = None
@@ -654,7 +1132,15 @@ app.add_middleware(
 @app.get("/")
 async def read_index():
     if os.path.exists("index.html"):
-        with open("index.html", "r", encoding="utf-8") as f: return HTMLResponse(content=f.read())
+        with open("index.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(
+                content=f.read(),
+                headers={
+                    "Cache-Control": "no-store, max-age=0",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                },
+            )
     return HTMLResponse("index.html missing")
 
 @app.get("/manifest.json")
@@ -677,7 +1163,7 @@ async def add_source(source: SourceModel):
     else:
         current.append(source.dict())
     save_config(current)
-    asyncio.create_task(reload_system_async())
+    asyncio.create_task(request_reload(reason="source_saved", dedupe=True))
     return {"status": "success", "message": "已保存并自动刷新"}
 
 
@@ -722,8 +1208,14 @@ async def browse_source_dirs(payload: SourceDirsModel):
 async def reload_sources():
     """手动触发源配置刷新"""
     try:
-        asyncio.create_task(reload_system_async())
-        return {"status": "success", "message": "Reload triggered"}
+        snapshot = await request_reload(reason="manual", dedupe=False)
+        return {
+            "status": "success",
+            "message": "Reload queued",
+            "queue_size": snapshot.get("queue_size", 0),
+            "active_job_id": snapshot.get("active_job_id", 0),
+            "progress_percent": snapshot.get("progress_percent", 0.0),
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -731,11 +1223,62 @@ async def reload_sources():
 @app.get("/v1/reload/status")
 async def get_reload_status():
     """获取当前刷新状态"""
+    snap = await get_reload_state_snapshot()
     return {
-        "is_refreshing": scan_lock.locked(),
+        "is_refreshing": bool(snap.get("is_refreshing", False)),
         "sources_count": len(alist_instances),
-        "video_pool_size": len(video_pool)
+        "video_pool_size": len(video_pool),
+        "queue_size": int(snap.get("queue_size", 0)),
+        "active_job_id": int(snap.get("active_job_id", 0)),
+        "progress_percent": float(snap.get("progress_percent", 0.0)),
+        "progress_stage": str(snap.get("progress_stage", "idle")),
+        "progress_detail": str(snap.get("progress_detail", "")),
+        "progress_completed_units": int(snap.get("progress_completed_units", 0)),
+        "progress_total_units": int(snap.get("progress_total_units", 0)),
+        "sources_total": int(snap.get("sources_total", 0)),
+        "sources_done": int(snap.get("sources_done", 0)),
+        "paths_total": int(snap.get("paths_total", 0)),
+        "paths_done": int(snap.get("paths_done", 0)),
+        "current_source": str(snap.get("current_source", "")),
+        "current_path": str(snap.get("current_path", "")),
+        "last_started_ts": snap.get("last_started_ts"),
+        "last_finished_ts": snap.get("last_finished_ts"),
+        "last_duration_ms": float(snap.get("last_duration_ms", 0.0)),
+        "last_result": str(snap.get("last_result", "idle")),
+        "last_error": str(snap.get("last_error", "")),
+        "last_reason": str(snap.get("last_reason", "")),
+        "total_requested": int(snap.get("total_requested", 0)),
+        "total_completed": int(snap.get("total_completed", 0)),
+        "total_failed": int(snap.get("total_failed", 0)),
     }
+
+
+@app.get("/v1/reload/queue")
+async def get_reload_queue():
+    return await get_reload_status()
+
+
+@app.get("/v1/stream/health")
+async def get_stream_health(window_sec: int = 600):
+    window_sec = max(60, min(int(window_sec), 86400))
+    payload = _stream_health_snapshot(window_sec)
+    snap = await get_reload_state_snapshot()
+    payload.update({
+        "is_refreshing": bool(snap.get("is_refreshing", False)),
+        "reload_queue_size": int(snap.get("queue_size", 0)),
+        "reload_progress_percent": float(snap.get("progress_percent", 0.0)),
+        "reload_progress_stage": str(snap.get("progress_stage", "idle")),
+        "sources_count": len(alist_instances),
+        "video_pool_size": len(video_pool),
+        "stream_events_cached": len(stream_events),
+    })
+    return payload
+
+
+@app.post("/v1/stream/prune_stale")
+async def prune_stale_stream_entries(sample_size: int = 120):
+    result = await _prune_stale_media_once(sample_size)
+    return {"status": "success", **result, "video_pool_size": len(video_pool)}
 
 
 @app.delete("/v1/sources/{name}")
@@ -743,7 +1286,7 @@ async def remove_source(name: str):
     current = load_config()
     current = [s for s in current if s['name'] != name]
     save_config(current)
-    asyncio.create_task(reload_system_async())
+    asyncio.create_task(request_reload(reason="source_deleted", dedupe=True))
     return {"status": "success", "message": "已删除并自动刷新"}
 
 # --- Folder Config API ---
@@ -773,7 +1316,7 @@ async def save_folders(folders: List[dict]):
 @app.get("/v1/get_video")
 async def get_random_video(request: Request):
     if not video_pool:
-        if not scan_lock.locked(): asyncio.create_task(reload_system_async())
+        asyncio.create_task(request_reload(reason="empty_pool", dedupe=True))
         raise HTTPException(status_code=503, detail="Initializing")
     media = random.choice(video_pool)
     return build_media_response(request, media)
@@ -792,11 +1335,62 @@ def build_media_response(request: Request, media: dict):
     }
 
 
-async def _resolve_media_raw_url(source: str, path: str) -> str:
+def _evict_media_from_pool(source: str, path: str) -> None:
+    global video_pool
+    before = len(video_pool)
+    video_pool = [v for v in video_pool if not (v.get('source') == source and v.get('path') == path)]
+    after = len(video_pool)
+    if after != before:
+        stream_counters["evicted_stale"] = int(stream_counters.get("evicted_stale", 0)) + (before - after)
+        print(f"Evicted stale media from pool: source={source}, path={path}")
+
+
+def _source_clean_base_url(source: str) -> str:
+    instance = alist_instances.get(source) or {}
+    return str(instance.get("url") or "").rstrip('/').replace('/dav', '')
+
+
+def _evict_media_by_backend_path(clean_base_url: str, path: str) -> int:
+    global video_pool
+    target_path = _normalize_media_path(path)
+    removed = 0
+    kept = []
+    for media in video_pool:
+        media_source = str(media.get("source") or "")
+        media_path = _normalize_media_path(str(media.get("path") or "/"))
+        media_base = _source_clean_base_url(media_source)
+        same_backend = (not clean_base_url) or (media_base == clean_base_url)
+        if same_backend and media_path == target_path:
+            removed += 1
+            continue
+        kept.append(media)
+    if removed:
+        video_pool = kept
+        stream_counters["evicted_stale"] = int(stream_counters.get("evicted_stale", 0)) + removed
+        print(f"Evicted media by backend+path: base={clean_base_url}, path={target_path}, removed={removed}")
+    return removed
+
+
+def _is_path_in_any_random_scope(path: str) -> bool:
+    target_path = _normalize_media_path(path)
+    for instance in alist_instances.values():
+        conf = instance.get("conf", {})
+        if not _source_random_enabled(conf):
+            continue
+        for selected in _selected_paths_from_conf(conf):
+            if _path_in_scope(target_path, selected):
+                return True
+    return False
+
+
+async def _resolve_media_raw_url(source: str, path: str, evict_on_not_found: bool = True) -> str:
+    probe_path = _normalize_media_path(path)
     if source not in alist_instances:
+        _record_stream_result(False, source, "source_not_found")
         raise HTTPException(status_code=404, detail="Source not found")
 
     if shared_http_client is None:
+        _record_stream_result(False, source, "http_client_not_ready")
         raise HTTPException(status_code=503, detail="HTTP client not initialized")
 
     instance = alist_instances[source]
@@ -805,23 +1399,157 @@ async def _resolve_media_raw_url(source: str, path: str) -> str:
     username = str(conf.get('username') or "")
     password = str(conf.get('password') or "")
 
-    details, err = await AlistHelper.get_file_details_with_error(shared_http_client, clean_url, instance['token'], path)
+    last_err = ""
+    # 并发下 OpenList 偶发瞬时失败，做短重试；对象确实不存在则立刻淘汰池中脏条目
+    for attempt in range(3):
+        token = instance.get('token') or ""
+        details, err = await AlistHelper.get_file_details_with_error(shared_http_client, clean_url, token, probe_path)
+        if err and "token is invalidated" in err.lower():
+            token, login_err = await get_source_token(shared_http_client, clean_url, username, password, force_refresh=True)
+            if not token:
+                _record_stream_result(False, source, "login_failed")
+                raise HTTPException(status_code=400, detail=login_err or "Login failed")
+            instance['token'] = token
+            details, err = await AlistHelper.get_file_details_with_error(shared_http_client, clean_url, token, probe_path)
+
+        if err:
+            last_err = err
+            if _is_object_not_found_error(err):
+                # 并发高峰下个别后端会瞬时报 not found，先短重试再判定
+                if attempt < 2:
+                    await asyncio.sleep(0.08 * (2 ** attempt))
+                    continue
+                if evict_on_not_found:
+                    _evict_media_from_pool(source, probe_path)
+                _record_stream_result(False, source, "object_not_found")
+                raise HTTPException(status_code=404, detail="object not found")
+            if attempt < 2:
+                await asyncio.sleep(0.08 * (2 ** attempt))
+                continue
+            _record_stream_result(False, source, "alist_error")
+            raise HTTPException(status_code=502, detail=err)
+
+        if details and details.get('raw_url'):
+            _record_stream_result(True, source)
+            return str(details.get('raw_url'))
+
+        last_err = "File unavailable"
+        if attempt < 2:
+            await asyncio.sleep(0.08 * (2 ** attempt))
+            continue
+        _record_stream_result(False, source, "file_unavailable")
+        raise HTTPException(status_code=404, detail="File unavailable")
+
+    _record_stream_result(False, source, "resolve_failed")
+    raise HTTPException(status_code=502, detail=last_err or "stream resolve failed")
+
+
+def _normalize_media_path(path: str) -> str:
+    if not isinstance(path, str):
+        return "/"
+    clean = "/" + path.strip().lstrip("/")
+    clean = re.sub(r"/+", "/", clean)
+    return clean or "/"
+
+
+def _join_media_path(dir_path: str, file_name: str) -> str:
+    base = _normalize_media_path(dir_path)
+    if base == "/":
+        return _normalize_media_path(file_name)
+    return _normalize_media_path(f"{base.rstrip('/')}/{str(file_name).lstrip('/')}")
+
+
+def _is_object_not_found_error(message: Optional[str]) -> bool:
+    if not message:
+        return False
+    msg = message.lower()
+    if "object not found" in msg:
+        return True
+    if "file not found" in msg:
+        return True
+    return "not found" in msg and "token" not in msg
+
+
+async def _probe_media_exists(instance: dict, path: str) -> tuple[Optional[bool], Optional[str]]:
+    if shared_http_client is None:
+        return None, "HTTP client not initialized"
+
+    clean_url = instance['url'].rstrip('/').replace('/dav', '')
+    conf = instance.get('conf', {})
+    username = str(conf.get('username') or "")
+    password = str(conf.get('password') or "")
+    token = str(instance.get('token') or "")
+    query_path = _normalize_media_path(path)
+
+    details, err = await AlistHelper.get_file_details_with_error(shared_http_client, clean_url, token, query_path)
     if err and "token is invalidated" in err.lower():
-        token, login_err = await get_source_token(shared_http_client, clean_url, username, password, force_refresh=True)
-        if not token:
-            raise HTTPException(status_code=400, detail=login_err or "Login failed")
+        new_token, login_err = await get_source_token(
+            shared_http_client, clean_url, username, password, force_refresh=True
+        )
+        if not new_token:
+            return None, login_err or "Login failed"
+        token = new_token
         instance['token'] = token
-        details, err = await AlistHelper.get_file_details_with_error(shared_http_client, clean_url, token, path)
+        details, err = await AlistHelper.get_file_details_with_error(shared_http_client, clean_url, token, query_path)
 
     if err:
-        raise HTTPException(status_code=502, detail=err)
-    if not details or not details.get('raw_url'):
-        raise HTTPException(status_code=404, detail="File unavailable")
-    return str(details.get('raw_url'))
+        if _is_object_not_found_error(err):
+            return False, None
+        return None, err
+    return bool(details), None
 
-@app.get("/v1/stream")
-async def stream_video(source: str, path: str):
-    raw_url = await _resolve_media_raw_url(source, path)
+
+async def _verify_delete_committed(instance: dict, file_path: str) -> tuple[bool, str]:
+    target = _normalize_media_path(file_path)
+    # OpenList/后端存储状态可能有短暂延迟，做短轮询避免“假成功”
+    delays = (0.0, 0.5, 1.0, 2.0, 3.0)
+    last_err = ""
+    for delay in delays:
+        if delay > 0:
+            await asyncio.sleep(delay)
+        exists, err = await _probe_media_exists(instance, target)
+        if err:
+            last_err = err
+            continue
+        if exists is False:
+            return True, ""
+    if last_err:
+        return False, f"删除后复核失败: {last_err}"
+    return False, f"删除后复核失败: 文件仍存在 {target}"
+
+
+async def _verify_move_committed(instance: dict, src_path: str, dst_path: str) -> tuple[bool, str]:
+    src = _normalize_media_path(src_path)
+    dst = _normalize_media_path(dst_path)
+    delays = (0.0, 0.5, 1.0, 2.0, 3.0)
+    last_err = ""
+    last_src_exists: Optional[bool] = None
+    last_dst_exists: Optional[bool] = None
+
+    for delay in delays:
+        if delay > 0:
+            await asyncio.sleep(delay)
+        src_exists, src_err = await _probe_media_exists(instance, src)
+        dst_exists, dst_err = await _probe_media_exists(instance, dst)
+        if src_err or dst_err:
+            last_err = "; ".join([x for x in [src_err, dst_err] if x])
+            continue
+        last_src_exists = src_exists
+        last_dst_exists = dst_exists
+        if src_exists is False and dst_exists is True:
+            return True, ""
+
+    if last_err:
+        return False, f"移动后复核失败: {last_err}"
+    return False, (
+        f"移动后复核超时(源是否存在={last_src_exists}, 目标是否存在={last_dst_exists})，"
+        "可能仍在后台任务执行中，请稍后刷新确认"
+    )
+
+
+@app.api_route("/v1/stream", methods=["GET", "HEAD"])
+async def stream_video(request: Request, source: str, path: str):
+    raw_url = await _resolve_media_raw_url(source, path, evict_on_not_found=(request.method != "HEAD"))
     return RedirectResponse(url=raw_url, status_code=302)
 
 @app.get("/v1/transcode")
@@ -863,6 +1591,12 @@ async def delete_video(payload: dict):
     conf = instance.get('conf', {})
     token = instance['token']
 
+    pre_exists, pre_err = await _probe_media_exists(instance, file_path)
+    if pre_err:
+        raise HTTPException(status_code=502, detail=pre_err)
+    if pre_exists is False:
+        raise HTTPException(status_code=404, detail=f"源文件不存在: {file_path}")
+
     # 带重试的删除（处理 SMB 共享锁 STATUS_SHARING_VIOLATION）
     max_retries = 3
     for attempt in range(max_retries):
@@ -886,9 +1620,11 @@ async def delete_video(payload: dict):
         break
 
     if success:
-        global video_pool
-        video_pool = [v for v in video_pool if not (v['source'] == source_name and v['path'] == file_path)]
-        return {"status": "success"}
+        verified, verify_msg = await _verify_delete_committed(instance, file_path)
+        if not verified:
+            raise HTTPException(status_code=500, detail=verify_msg)
+        evicted = _evict_media_by_backend_path(instance['url'].rstrip('/').replace('/dav', ''), file_path)
+        return {"status": "success", "evicted": evicted}
     else: raise HTTPException(status_code=500, detail=msg)
 
 @app.post("/v1/move_video")
@@ -904,6 +1640,12 @@ async def move_video(payload: dict):
     src_dir, file_name = os.path.split(src_path)
     api_url = f"{base_url}/api/fs/move"
     body = {"src_dir": src_dir or "/", "dst_dir": dst_dir, "names": [file_name]}
+
+    src_exists, src_err = await _probe_media_exists(instance, src_path)
+    if src_err:
+        raise HTTPException(status_code=502, detail=src_err)
+    if src_exists is False:
+        raise HTTPException(status_code=404, detail=f"源文件不存在: {src_path}")
 
     async def _do_move(token: str) -> dict:
         client = shared_http_client or httpx.AsyncClient()
@@ -921,9 +1663,22 @@ async def move_video(payload: dict):
             last_msg = str(e)
             break
         if data.get('code') == 200:
-            global video_pool
-            video_pool = [v for v in video_pool if not (v['source'] == source_name and v['path'] == src_path)]
-            return {"status": "success"}
+            dst_path = _join_media_path(dst_dir, file_name)
+            verified, verify_msg = await _verify_move_committed(instance, src_path, dst_path)
+            if not verified:
+                raise HTTPException(status_code=500, detail=verify_msg)
+            evicted_old = _evict_media_by_backend_path(base_url, src_path)
+            in_random_scope = _is_path_in_any_random_scope(dst_path)
+            evicted_dst = 0
+            if not in_random_scope:
+                evicted_dst = _evict_media_by_backend_path(base_url, dst_path)
+            return {
+                "status": "success",
+                "dst_path": dst_path,
+                "in_random_scope": in_random_scope,
+                "evicted_old": evicted_old,
+                "evicted_dst": evicted_dst,
+            }
         last_msg = str(data.get('message', ''))
         # token 过期 → 刷新后重试
         if 'token' in last_msg.lower():
@@ -994,15 +1749,14 @@ async def browse_directory(source: str, path: str, unfiltered: bool = False):
     if err:
         raise HTTPException(status_code=502, detail=err)
     # 获取该源的 selected_paths，用于过滤浏览结果
-    selected_paths = conf.get('selected_paths') or [conf.get('root_path', '/')]
-    norm_selected = [sp.rstrip('/') or '/' for sp in selected_paths]
+    norm_selected = _selected_paths_from_conf(conf)
 
     def is_path_allowed(item_path: str, is_dir: bool) -> bool:
         """检查路径是否在 selected_paths 范围内（或是其祖先目录）"""
         np = item_path.rstrip('/') or '/'
         for sp in norm_selected:
             # 文件/目录在选定路径内部
-            if np == sp or np.startswith(sp + '/'):
+            if _path_in_scope(np, sp):
                 return True
             # 目录是选定路径的祖先（允许导航到选定路径）
             if is_dir and sp.startswith(np + '/'):
