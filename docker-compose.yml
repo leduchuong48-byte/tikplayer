@@ -1,7 +1,9 @@
+name: tikplayer
+
 services:
   tikplayer:
-    image: leduchuong/tikplayer:2.1
-    container_name: tikplayer_v2
+    image: docker.io/leduchuong/tikplayer:2.2
+    container_name: tikplayer
     restart: unless-stopped
     ports:
       - "1015:8000"

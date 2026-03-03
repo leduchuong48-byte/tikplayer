@@ -1,5 +1,8 @@
 FROM lscr.io/linuxserver/ffmpeg:latest
 
+LABEL org.opencontainers.image.title="Tikplayer"
+LABEL org.opencontainers.image.version="2.2"
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \

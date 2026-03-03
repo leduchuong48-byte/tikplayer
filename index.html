@@ -2,8 +2,8 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
-    <title>DeerPlayer Ultra</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover,interactive-widget=resizes-content">
+    <title>Tikplayer 2.2</title>
     
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -19,10 +19,10 @@
         * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; outline: none; user-select: none; }
         .icon { display:inline-block; width:1em; height:1em; vertical-align:-0.125em; fill:currentColor; }
         .icon-spin { animation:spin 0.8s linear infinite; }
-        body { background: var(--bg); height: 100vh; height: 100dvh; width: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: var(--text); display: flex; flex-direction: column; }
+        body { background: var(--bg); min-height: 100vh; min-height: 100svh; min-height: 100dvh; width: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, sans-serif; color: var(--text); display: flex; flex-direction: column; }
         
         #app-container { flex: 1; position: relative; overflow: hidden; z-index: 1; height: 100dvh; }
-        .page { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; flex-direction: column; background: var(--bg); overflow-y: auto; padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom)); }
+        .page { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; flex-direction: column; background: var(--bg); overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom)); }
         .page.active { display: flex; z-index: 10; }
         #page-play { background: #000; overflow: hidden; padding-bottom: 0; }
         
@@ -78,7 +78,7 @@
         .action-danger { color: #ff3b30; }
 
         /* File & Settings */
-        .file-header { padding: 10px 15px; background: var(--card-bg); display: flex; gap: 10px; align-items: center; position: sticky; top: 37px; z-index: 50; border-bottom: 1px solid #222; }
+        .file-header { padding: 10px 15px; background: var(--card-bg); display: flex; gap: 10px; align-items: center; position: relative; top: 0; z-index: 20; border-bottom: 1px solid #222; }
         .breadcrumb { flex: 1; overflow-x: auto; white-space: nowrap; font-size: 12px; color: #888; }
         .file-list { padding: 5px; }
         .file-item { display: flex; align-items: center; padding: 12px 10px; margin-bottom: 4px; background: #1e1e1e; border-radius: 6px; transition: background 0.2s; }
@@ -97,11 +97,41 @@
         .loading-spinner { position:fixed; inset:0; display:none; align-items:center; justify-content:center; font-size:30px; color:rgba(255,255,255,0.6); z-index:50; pointer-events:none; }
         .center-icon { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 40; font-size: 50px; color: rgba(255,255,255,0.6); pointer-events: none; opacity: 0; transition: opacity 0.2s; }
         .center-icon.show { opacity: 1; }
+        .app-brand-badge {
+            position: fixed;
+            bottom: calc(var(--nav-height) + env(safe-area-inset-bottom) + 8px);
+            right: 10px;
+            z-index: 900;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            color: #fff;
+            background: rgba(0, 0, 0, 0.55);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 999px;
+            padding: 4px 9px;
+            backdrop-filter: blur(6px);
+            pointer-events: none;
+            display: none;
+        }
         @keyframes spin { 100% {transform:rotate(360deg)} }
         
-        .source-selector { display: flex; gap: 6px; padding: 8px 12px; overflow-x: auto; background: var(--bg); border-bottom: 1px solid #111; position: sticky; top: 0; z-index: 51; }
+        .files-topbar { position: sticky; top: env(safe-area-inset-top); z-index: 60; background: var(--bg); }
+        .source-selector { display: flex; gap: 6px; padding: 8px 12px; overflow-x: auto; background: var(--bg); border-bottom: 1px solid #111; position: relative; z-index: 1; }
         .source-chip { padding: 5px 12px; background: #1a1a1a; color: #777; border-radius: 14px; font-size: 11px; white-space: nowrap; border: 1px solid #2a2a2a; }
         .source-chip.active { background: #ddd; color: #000; border-color: #ddd; font-weight: 700; }
+        .account-item { background: #222; padding: 10px; border-radius: 8px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+        .account-main { flex: 1; min-width: 0; }
+        .account-name { font-size: 12px; font-weight: 700; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+        .account-url { font-size: 10px; color: #777; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+        .account-actions { display: flex; gap: 6px; flex-shrink: 0; }
+        .account-btn { border: 1px solid #3a3a3a; background: #161616; color: #ddd; border-radius: 6px; padding: 6px 10px; font-size: 11px; line-height: 1; cursor: pointer; }
+        .account-btn:active { transform: scale(0.97); }
+        .account-btn-edit { color: #8fb8ff; border-color: #2b63d9; }
+        .account-btn-del { color: #ff8a80; border-color: #8f2b2b; }
+        .account-random-tag { font-size: 9px; line-height: 1; border-radius: 999px; padding: 2px 6px; border: 1px solid transparent; }
+        .account-random-on { color: #9fd6a2; border-color: #2b8a3e; background: rgba(43, 138, 62, 0.15); }
+        .account-random-off { color: #f7b4b4; border-color: #a23a3a; background: rgba(162, 58, 58, 0.15); }
         .path-chip-wrap { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
         .path-chip { background:#111; border:1px solid #333; color:#bbb; border-radius:12px; font-size:11px; padding:4px 10px; }
         .picker-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 4000; display: none; }
@@ -117,6 +147,7 @@
     </style>
 </head>
 <body>
+    <div class="app-brand-badge" id="appBrandBadge">Tikplayer 2.2</div>
     <svg xmlns="http://www.w3.org/2000/svg" style="display:none;">
         <symbol id="i-play" viewBox="0 0 384 512"><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80L0 432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></symbol>
         <symbol id="i-home" viewBox="0 0 576 512"><path d="M575.8 255.5c0 18-15 32.1-32 32.1l-32 0 .7 160.2c0 2.7-.2 5.4-.5 8.1l0 16.2c0 22.1-17.9 40-40 40l-16 0c-1.1 0-2.2 0-3.3-.1c-1.4 .1-2.8 .1-4.2 .1L416 512l-24 0c-22.1 0-40-17.9-40-40l0-24 0-64c0-17.7-14.3-32-32-32l-64 0c-17.7 0-32 14.3-32 32l0 64 0 24c0 22.1-17.9 40-40 40l-24 0-31.9 0c-1.5 0-3-.1-4.5-.2c-1.2 .1-2.4 .2-3.6 .2l-16 0c-22.1 0-40-17.9-40-40l0-112c0-.9 0-1.9 .1-2.8l0-69.7-32 0c-18 0-32-14-32-32.1c0-9 3-17 10-24L266.4 8c7-7 15-8 22-8s15 2 21 7L564.8 231.5c8 7 12 15 11 24z"/></symbol>
@@ -172,13 +203,15 @@
         </div>
 
         <div id="page-files" class="page">
-            <div class="source-selector" id="sourceTabs"></div>
-            <div class="file-header">
-                <svg class="icon" data-action="go-up-dir" style="padding:8px;color:#aaa;font-size:16px;cursor:pointer;"><use href="#i-arrow-left"/></svg>
-                <div class="breadcrumb" id="breadcrumb">/</div>
-                <div style="display:flex;gap:15px;align-items:center;">
-                     <svg class="icon" style="font-size:16px;color:#ddd;cursor:pointer;" data-action="mkdir-prompt"><use href="#i-folder-plus"/></svg>
-                     <svg class="icon" style="font-size:18px;color:var(--primary);cursor:pointer;" data-action="play-folder"><use href="#i-play-circle"/></svg>
+            <div class="files-topbar">
+                <div class="source-selector" id="sourceTabs"></div>
+                <div class="file-header">
+                    <svg class="icon" data-action="go-up-dir" style="padding:8px;color:#aaa;font-size:16px;cursor:pointer;"><use href="#i-arrow-left"/></svg>
+                    <div class="breadcrumb" id="breadcrumb">/</div>
+                    <div style="display:flex;gap:15px;align-items:center;">
+                         <svg class="icon" style="font-size:16px;color:#ddd;cursor:pointer;" data-action="mkdir-prompt"><use href="#i-folder-plus"/></svg>
+                         <svg class="icon" style="font-size:18px;color:var(--primary);cursor:pointer;" data-action="play-folder"><use href="#i-play-circle"/></svg>
+                    </div>
                 </div>
             </div>
             <div style="padding:8px 12px;border-bottom:1px solid #1a1a1a;">
@@ -219,7 +252,7 @@
                 </div>
 
                 <div class="settings-card">
-                    <div class="card-title">账号管理 (点击编辑)</div>
+                    <div class="card-title">账号管理</div>
                     <div id="accountList"></div>
                     <div style="margin-top:10px;border-top:1px solid #222;padding-top:10px;">
                         <div style="display:grid;grid-template-columns: 1fr 1fr; gap:8px;">
@@ -231,6 +264,10 @@
                             <input type="text" id="accUser" placeholder="用户名">
                             <input type="password" id="accPass" placeholder="密码">
                         </div>
+                        <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12px;color:#aaa;">
+                            <input type="checkbox" id="accRandomEnabled" checked>
+                            参与随机播放
+                        </label>
                         <div class="btn-row" style="margin-top:8px;">
                             <button class="btn-primary" data-action="test-openlist" style="background:#2b63d9;">测试连接</button>
                             <button class="btn-primary" data-action="open-folder-picker" style="background:#2b8a3e;">选择文件夹</button>
@@ -376,6 +413,7 @@
         window.onload = async () => {
             initPlayerControls(); initKeyboard(); initProgressBar(); initNavEvents();
             initActionBus(); initFileListDelegation(); initA11yButtons(); initDebouncedInteractions(); initSearchHandlers();
+            updateBrandBadgeVisibility();
             await fetchSources(); await fetchFolders();
             if(state.sources.length > 0) {
                 state.currentSource = state.sources[0].name;
@@ -426,6 +464,12 @@
                 return;
             }
             el.textContent = keyword ? `匹配 ${matched} / ${total}` : `共 ${total} 项`;
+        }
+
+        async function parseActionResponse(res) {
+            const body = await res.json().catch(() => ({}));
+            const ok = !!(res.ok && body && body.status === 'success');
+            return { ok, body };
         }
 
         function dispatchAction(action, el, event) {
@@ -510,6 +554,10 @@
             return withSlash.replace(/\/+/g, '/');
         }
 
+        function isRandomEnabled(source) {
+            return source && source.random_enabled !== false;
+        }
+
         function getAccountDraft() {
             return {
                 name: document.getElementById('accName').value.trim(),
@@ -517,6 +565,7 @@
                 username: document.getElementById('accUser').value.trim(),
                 password: document.getElementById('accPass').value,
                 root_path: normalizePath(document.getElementById('accPath').value.trim() || '/'),
+                random_enabled: !!document.getElementById('accRandomEnabled').checked,
             };
         }
 
@@ -790,6 +839,12 @@
         }
 
         // --- Core Logic ---
+        function updateBrandBadgeVisibility() {
+            const badge = document.getElementById('appBrandBadge');
+            if (!badge) return;
+            badge.style.display = state.currentTab === 'settings' ? 'inline-flex' : 'none';
+        }
+
         function switchTab(tab) {
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
             document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -797,6 +852,7 @@
             const map = {'play':0, 'files':1, 'settings':2};
             document.querySelectorAll('.nav-item')[map[tab]].classList.add('active');
             state.currentTab = tab;
+            updateBrandBadgeVisibility();
         }
 
         async function loadNextVideo(isNext = true) {
@@ -1162,9 +1218,9 @@
                     method: 'POST', headers: {'Content-Type':'application/json'},
                     body: JSON.stringify({source: state.currentSource, path: state.ctxFile.path})
                 });
-                if (!res.ok) {
-                    const err = await res.json().catch(() => ({}));
-                    return showToast(err.detail || '删除失败');
+                const { ok, body } = await parseActionResponse(res);
+                if (!ok) {
+                    return showToast(body.detail || body.message || '删除失败');
                 }
                 await browseFile(state.currentSource, state.currentPath);
                 showToast("删除成功");
@@ -1263,8 +1319,15 @@
             closeArchiveDrawer(); showToast(`移动至 [${name}]...`);
             try {
                 const res = await fetch('/v1/move_video', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({source: current.source, src_path: current.raw_path, dst_dir: dst}) });
-                if(res.ok) { showToast(`✅ 成功`); if(state.currentTab === 'play') setTimeout(() => loadNextVideo(true), 500); else browseFile(state.currentSource, state.currentPath); } 
-                else { const err = await res.json().catch(() => ({})); showToast(`❌ ${err.detail || '移动失败'}`); }
+                const { ok, body } = await parseActionResponse(res);
+                if(ok) {
+                    if (body.in_random_scope) showToast(`✅ 成功，目标目录仍在随机范围`);
+                    else showToast(`✅ 成功，目标目录已排除随机`);
+                    if(state.currentTab === 'play') setTimeout(() => loadNextVideo(true), 500);
+                    else browseFile(state.currentSource, state.currentPath);
+                } else {
+                    showToast(`❌ ${body.detail || body.message || '移动失败'}`);
+                }
             } catch(e) { showToast("网络错误"); }
         }
 
@@ -1310,6 +1373,7 @@
             document.getElementById('accPath').value = s.root_path;
             document.getElementById('accUser').value = s.username;
             document.getElementById('accPass').value = s.password;
+            document.getElementById('accRandomEnabled').checked = isRandomEnabled(s);
             state.uiState.selectedPaths = (s.selected_paths && s.selected_paths.length ? s.selected_paths : [s.root_path || '/']).map(p => normalizePath(p));
             renderSelectedPaths();
             document.getElementById('btnSaveAccount').innerText = "保存修改";
@@ -1319,6 +1383,7 @@
         function cancelEditAccount() {
              document.getElementById('accName').value = ""; document.getElementById('accUrl').value = "";
              document.getElementById('accPath').value = "/"; document.getElementById('accUser').value = ""; document.getElementById('accPass').value = "";
+             document.getElementById('accRandomEnabled').checked = true;
              document.getElementById('btnSaveAccount').innerText = "添加账号";
              document.getElementById('btnCancelEditAccount').style.display = "none";
              state.uiState.selectedPaths = [];
@@ -1352,10 +1417,16 @@
                 quickSearchInput.value = state.uiState.quickFolderSearchQuery;
             }
             document.getElementById('accountList').innerHTML = state.sources.map((s, i) => `
-                <div style="background:#222;padding:8px;border-radius:6px;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center;" data-action="settings-account-edit" data-index="${i}">
-                    <div style="overflow:hidden;"><div style="font-size:12px;font-weight:bold;">${escapeHtml(s.name || '')}</div><div style="font-size:9px;color:#666;">${escapeHtml(s.url || '')}</div></div>
-                    <svg class="icon" style="color:#ff3b30;padding:8px;font-size:14px;cursor:pointer;" data-action="settings-account-del" data-name="${encodeURIComponent(s.name || '')}" data-stop-propagation="1"><use href="#i-trash"/></svg>
-                </div>`).join('');
+                <div class="account-item">
+                    <div class="account-main">
+                        <div class="account-name">${escapeHtml(s.name || '')}<span class="account-random-tag ${isRandomEnabled(s) ? 'account-random-on' : 'account-random-off'}">${isRandomEnabled(s) ? '随机开' : '随机关'}</span></div>
+                        <div class="account-url">${escapeHtml(s.url || '')}</div>
+                    </div>
+                    <div class="account-actions">
+                        <button type="button" class="account-btn account-btn-edit" data-action="settings-account-edit" data-index="${i}">编辑</button>
+                        <button type="button" class="account-btn account-btn-del" data-action="settings-account-del" data-name="${encodeURIComponent(s.name || '')}">删除</button>
+                    </div>
+                </div>`).join('') || '<div style="text-align:center;color:#777;padding:8px 0;font-size:12px;">暂无账号</div>';
             const q = state.uiState.quickFolderSearchQuery;
             const filteredQuickFolders = filterByKeyword(state.quickFolders, q, (f) => `${f.name || ''} ${f.path || ''} ${f.type || ''}`);
             renderSearchCount('quickFolderSearchCount', filteredQuickFolders.length, state.quickFolders.length, q);
@@ -1383,7 +1454,23 @@
         async function saveFoldersToServer() { await fetch('/v1/folders', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(state.quickFolders)}); renderSettings(); }
         function delQuickFolder(idx) { if(!confirm("删除槽位?")) return; state.quickFolders.splice(idx, 1); saveFoldersToServer(); }
         async function fetchSources() { try { const res = await fetch('/v1/sources'); if(!res.ok) throw new Error(); state.sources = await res.json(); } catch(e) { console.warn('fetchSources failed:', e); } }
-        async function delAccount(name) { if(confirm("删除?")) { try { await fetch(`/v1/sources/${encodeURIComponent(name)}`, {method:'DELETE'}); await fetchSources(); renderSettings(); showToast('已删除，正在自动刷新...'); } catch(e) { showToast('删除失败'); } } }
+        async function delAccount(name) {
+            if (!name) return showToast('账号名为空');
+            if (!confirm(`删除账号「${name}」?`)) return;
+            try {
+                const res = await fetch(`/v1/sources/${encodeURIComponent(name)}`, {method: 'DELETE'});
+                const body = await res.json().catch(() => ({}));
+                if (!res.ok || body.status !== 'success') {
+                    return showToast(body.detail || body.message || '删除失败');
+                }
+                await fetchSources();
+                renderSettings();
+                if (state.editAccountIdx >= 0 && !state.sources[state.editAccountIdx]) cancelEditAccount();
+                showToast('已删除，正在自动刷新...');
+            } catch (e) {
+                showToast('删除失败');
+            }
+        }
         function toggleMute() { state.isMuted = !state.isMuted; if(state.dp && state.dp.video) state.dp.video.muted = state.isMuted; const icon = document.getElementById('volIcon'); const use = icon && icon.querySelector('use'); if(use) { if(state.isMuted) { use.setAttribute('href','#i-volume-mute'); showToast("已静音"); } else { use.setAttribute('href','#i-volume-up'); showToast("已开启声音"); } } }
         function toggleTranscode(el) { state.useTranscode = el.checked; }
         function toggleFullScreen() { if(!document.fullscreenElement) document.documentElement.requestFullscreen(); else if(document.exitFullscreen) document.exitFullscreen(); }
@@ -1392,11 +1479,12 @@
             if(icon) icon.classList.add('icon-spin');
             try {
                 const res = await fetch('/v1/reload', {method: 'POST'});
-                if(!res.ok) {
-                    const err = await res.json().catch(() => ({}));
-                    showToast(err.detail || '刷新失败');
+                const body = await res.json().catch(() => ({}));
+                if(!res.ok || body.status !== 'success') {
+                    showToast(body.detail || body.message || '刷新失败');
                 } else {
-                    showToast('源刷新成功');
+                    const queueSize = Number.isFinite(body.queue_size) ? body.queue_size : 0;
+                    showToast(`已加入刷新队列 (队列:${queueSize})`);
                     await fetchSources();
                     renderSourceTabs();
                 }
@@ -1408,7 +1496,31 @@
         }
         function toggleLandscape() { const p = document.getElementById('player'); if(p.classList.contains('landscape-mode')) { p.classList.remove('landscape-mode'); showToast("竖屏"); } else { p.classList.add('landscape-mode'); showToast("横屏"); } }
         function downloadMedia() { const c = state.videoStack[state.currentIndex]; if(c) { const a = document.createElement('a'); a.href = c.download_url; a.click(); showToast("开始下载..."); } }
-        async function deleteCurrentMedia() { const current = state.videoStack[state.currentIndex]; if(!current) return; if(!confirm(`确定删除？`)) return; resetPlayerUI(); await new Promise(r => setTimeout(r, 500)); try { const res = await fetch('/v1/delete_video', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({source: current.source, path: current.raw_path}) }); if(res.ok) { showToast("已删除"); state.videoStack.splice(state.currentIndex, 1); state.currentIndex--; loadNextVideo(true); } else { const err = await res.json().catch(() => ({})); showToast(`删除失败: ${err.detail || '未知错误'}`); } } catch(e) { showToast("网络错误"); } }
+        async function deleteCurrentMedia() {
+            const current = state.videoStack[state.currentIndex];
+            if(!current) return;
+            if(!confirm(`确定删除？`)) return;
+            resetPlayerUI();
+            await new Promise(r => setTimeout(r, 500));
+            try {
+                const res = await fetch('/v1/delete_video', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({source: current.source, path: current.raw_path})
+                });
+                const { ok, body } = await parseActionResponse(res);
+                if(ok) {
+                    showToast("已删除");
+                    state.videoStack.splice(state.currentIndex, 1);
+                    state.currentIndex--;
+                    loadNextVideo(true);
+                } else {
+                    showToast(`删除失败: ${body.detail || body.message || '未知错误'}`);
+                }
+            } catch(e) {
+                showToast("网络错误");
+            }
+        }
         function startImageTimer() { clearTimeout(imageTimer); imageTimer = setTimeout(() => { if(!state.isImagePaused) loadNextVideo(true); }, 5000); }
         async function preloadNext(expectedRequestToken, expectedIndex) {
             if (state.playMode !== 'random') return;
@@ -1436,104 +1548,150 @@
             const cur = document.getElementById('progressCurrent');
             let dragging = false;
             let activePointerId = null;
+            let pendingProgress = null;
+            let pausedByDrag = false;
             let lastWarnAt = 0;
 
-            const seekAt = (clientX) => {
-                if (!state.dp || !state.dp.video) return;
-                if (state.mediaState.disableSeekReason) {
-                    if (Date.now() - lastWarnAt > 1000) {
-                        showToast(state.mediaState.disableSeekReason);
-                        lastWarnAt = Date.now();
-                    }
-                    return;
-                }
-                const rect = bar.getBoundingClientRect();
-                const progress = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-                cur.style.width = `${progress * 100}%`;
-                const duration = state.dp.video.duration;
-                if (Number.isFinite(duration) && duration > 0) {
-                    const target = duration * progress;
-                    state.dp.video.currentTime = target;
-                    if (typeof state.dp.seek === 'function') state.dp.seek(target);
-                    if ('currentTime' in state.dp) {
-                        try { state.dp.currentTime = target; } catch (_) {}
-                    }
-                } else if (Date.now() - lastWarnAt > 1000) {
-                    showToast('视频还在加载元数据，请稍后拖动');
+            const warnOnce = (message) => {
+                if (Date.now() - lastWarnAt > 1000) {
+                    showToast(message);
                     lastWarnAt = Date.now();
                 }
+            };
+
+            const canSeekNow = () => {
+                if (!state.dp || !state.dp.video) return false;
+                if (state.mediaState.disableSeekReason) {
+                    warnOnce(state.mediaState.disableSeekReason);
+                    return false;
+                }
+                const duration = state.dp.video.duration;
+                if (!Number.isFinite(duration) || duration <= 0) {
+                    warnOnce('视频还在加载元数据，请稍后拖动');
+                    return false;
+                }
+                return true;
+            };
+
+            const progressFromClientX = (clientX) => {
+                const rect = bar.getBoundingClientRect();
+                if (!rect.width) return 0;
+                return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+            };
+
+            const previewAt = (clientX) => {
+                const progress = progressFromClientX(clientX);
+                pendingProgress = progress;
+                cur.style.width = `${progress * 100}%`;
+            };
+
+            const commitPendingSeek = () => {
+                if (pendingProgress === null) return;
+                if (!canSeekNow()) {
+                    pendingProgress = null;
+                    return;
+                }
+                const duration = state.dp.video.duration;
+                const target = duration * pendingProgress;
+                pendingProgress = null;
+                state.dp.video.currentTime = target;
+                if (typeof state.dp.seek === 'function') state.dp.seek(target);
+                if ('currentTime' in state.dp) {
+                    try { state.dp.currentTime = target; } catch (_) {}
+                }
+            };
+
+            const beginDrag = (clientX, pointerId = null) => {
+                if (!canSeekNow()) return;
+                dragging = true;
+                activePointerId = pointerId;
+                pausedByDrag = !!(state.dp && state.dp.video && !state.dp.video.paused);
+                if (pausedByDrag && typeof state.dp.pause === 'function') {
+                    state.dp.pause();
+                }
+                previewAt(clientX);
+            };
+
+            const endDrag = (clientX = null) => {
+                if (!dragging) return;
+                if (typeof clientX === 'number') previewAt(clientX);
+                dragging = false;
+                activePointerId = null;
+                commitPendingSeek();
+                if (pausedByDrag && state.dp && typeof state.dp.play === 'function') {
+                    Promise.resolve(state.dp.play()).catch(() => {});
+                }
+                pausedByDrag = false;
             };
 
             bar.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                seekAt(e.clientX);
+                if (dragging) return;
+                previewAt(e.clientX);
+                commitPendingSeek();
             });
 
-            bar.addEventListener('pointerdown', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                dragging = true;
-                activePointerId = e.pointerId;
-                if (bar.setPointerCapture) {
-                    try { bar.setPointerCapture(e.pointerId); } catch (_) {}
-                }
-                seekAt(e.clientX);
-            }, { passive: false });
+            const supportsPointer = typeof window.PointerEvent !== 'undefined';
+            if (supportsPointer) {
+                bar.addEventListener('pointerdown', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    beginDrag(e.clientX, e.pointerId);
+                    if (!dragging) return;
+                    if (bar.setPointerCapture) {
+                        try { bar.setPointerCapture(e.pointerId); } catch (_) {}
+                    }
+                }, { passive: false });
 
-            window.addEventListener('pointermove', (e) => {
-                if (!dragging) return;
-                if (activePointerId !== null && e.pointerId !== activePointerId) return;
-                e.preventDefault();
-                seekAt(e.clientX);
-            }, { passive: false });
+                window.addEventListener('pointermove', (e) => {
+                    if (!dragging) return;
+                    if (activePointerId !== null && e.pointerId !== activePointerId) return;
+                    e.preventDefault();
+                    previewAt(e.clientX);
+                }, { passive: false });
 
-            const endPointerDrag = (e) => {
-                if (activePointerId !== null && e && e.pointerId !== undefined && e.pointerId !== activePointerId) return;
-                if (bar.releasePointerCapture && activePointerId !== null) {
-                    try { bar.releasePointerCapture(activePointerId); } catch (_) {}
-                }
-                dragging = false;
-                activePointerId = null;
-            };
-            window.addEventListener('pointerup', endPointerDrag);
-            window.addEventListener('pointercancel', endPointerDrag);
+                const endPointerDrag = (e) => {
+                    if (activePointerId !== null && e && e.pointerId !== undefined && e.pointerId !== activePointerId) return;
+                    if (bar.releasePointerCapture && activePointerId !== null) {
+                        try { bar.releasePointerCapture(activePointerId); } catch (_) {}
+                    }
+                    endDrag(e && typeof e.clientX === 'number' ? e.clientX : null);
+                };
+                window.addEventListener('pointerup', endPointerDrag);
+                window.addEventListener('pointercancel', endPointerDrag);
+                return;
+            }
 
-            // Mouse fallback
+            // Mouse/touch fallback for browsers without pointer events
             bar.addEventListener('mousedown', (e) => {
                 e.preventDefault();
-                dragging = true;
-                seekAt(e.clientX);
+                beginDrag(e.clientX);
             });
             window.addEventListener('mousemove', (e) => {
                 if (!dragging) return;
-                seekAt(e.clientX);
+                previewAt(e.clientX);
             });
-            window.addEventListener('mouseup', () => {
-                dragging = false;
-                activePointerId = null;
+            window.addEventListener('mouseup', (e) => {
+                endDrag(e.clientX);
             });
 
-            // Fallback for older touch implementations
             bar.addEventListener('touchstart', (e) => {
                 if (!e.touches || !e.touches[0]) return;
                 e.preventDefault();
                 e.stopPropagation();
-                dragging = true;
-                seekAt(e.touches[0].clientX);
+                beginDrag(e.touches[0].clientX);
             }, { passive: false });
             bar.addEventListener('touchmove', (e) => {
-                if (!e.touches || !e.touches[0]) return;
+                if (!dragging || !e.touches || !e.touches[0]) return;
                 e.preventDefault();
-                seekAt(e.touches[0].clientX);
+                previewAt(e.touches[0].clientX);
             }, { passive: false });
             bar.addEventListener('touchend', () => {
-                dragging = false;
-                activePointerId = null;
+                endDrag();
             }, { passive: true });
             bar.addEventListener('touchcancel', () => {
-                dragging = false;
-                activePointerId = null;
+                endDrag();
             }, { passive: true });
         }
         function renderSourceTabs() { document.getElementById('sourceTabs').innerHTML = state.sources.map(s => `<div class="source-chip ${s.name === state.currentSource ? 'active' : ''}" data-action="change-source" data-source="${encodeURIComponent(s.name || '')}">${escapeHtml(s.name || '')}</div>`).join(''); initA11yButtons(); }

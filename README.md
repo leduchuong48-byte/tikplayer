@@ -15,8 +15,12 @@ TikPlayer 是一个面向 NAS/HomeLab 的轻量级视频在线播放与管理服
 
 ## 版本更新
 
-- `v2.1`：修复拖动进度条导致的播放异常问题。
-- `v2.1`：提升播放器整体稳定性，并增强与 OpenList/AList 链接的稳定性。
+- `v2.2`：`reload` 从布尔锁升级为“队列 + 进度百分比 + 阶段状态”，新增队列状态接口，避免“显示成功但实际未完成”。
+- `v2.2`：新增账号级 `random_enabled`，支持源“仅浏览不参与随机”；并在后端对随机池按路径去重，减少重叠源重复命中。
+- `v2.2`：`move/delete` 后按“同后端 + 路径”主动清理随机池脏条目，降低收纳后仍被随机命中的概率。
+- `v2.2`：账号管理改为明确的编辑/删除按钮，删除失败反馈更直接。
+- `v2.2`：移动端按 Safari/Chrome 规范重构为单一 sticky 顶栏，适配动态视口与安全区，修复文件页堆叠异常。
+- `v2.2`：前端缓存策略修复，`/` 返回 `no-store`，避免浏览器（含无痕）命中旧页面。
 
 ## Why this tool?（为什么要做它）
 
@@ -44,7 +48,7 @@ docker run -d \
   -p 1015:8000 \
   -v ./image:/app/image \
   -v ./data:/app/data \
-  docker.io/leduchuong/tikplayer:latest
+  docker.io/leduchuong/tikplayer:2.2
 ```
 
 ## For Portainer/Synology Users
@@ -56,7 +60,7 @@ Copy this into Portainer stacks and hit Deploy. Done.
 ```yaml
 services:
   tikplayer:
-    image: docker.io/leduchuong/tikplayer:latest
+    image: docker.io/leduchuong/tikplayer:2.2
     container_name: tikplayer
     restart: unless-stopped
     ports:

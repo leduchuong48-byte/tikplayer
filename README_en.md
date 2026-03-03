@@ -15,8 +15,12 @@ TikPlayer is a lightweight NAS/HomeLab media player service focused on simple de
 
 ## Release Notes
 
-- `v2.1`: Fixed playback issues when dragging the seek bar.
-- `v2.1`: Improved overall player stability and OpenList/AList link stability.
+- `v2.2`: `reload` moved from a boolean lock to a queue with progress percent and stage states, with queue status API added.
+- `v2.2`: Added per-source `random_enabled` to support browse-only sources, plus backend path-level dedup in random pool.
+- `v2.2`: On `move/delete`, random-pool stale entries are actively pruned by backend + path scope to improve collection consistency.
+- `v2.2`: Account management now uses explicit Edit/Delete actions with clearer failure feedback on delete.
+- `v2.2`: Mobile UI updated for Safari/Chrome with a single sticky top bar, dynamic viewport, and safe-area adaptation.
+- `v2.2`: Frontend cache strategy fixed: `/` now returns `no-store` to avoid stale page assets.
 
 ## Why this tool?
 
@@ -44,7 +48,7 @@ docker run -d \
   -p 1015:8000 \
   -v ./image:/app/image \
   -v ./data:/app/data \
-  docker.io/leduchuong/tikplayer:latest
+  docker.io/leduchuong/tikplayer:2.2
 ```
 
 ## For Portainer/Synology Users
@@ -56,7 +60,7 @@ Copy this into Portainer stacks and hit Deploy. Done.
 ```yaml
 services:
   tikplayer:
-    image: docker.io/leduchuong/tikplayer:latest
+    image: docker.io/leduchuong/tikplayer:2.2
     container_name: tikplayer
     restart: unless-stopped
     ports:
