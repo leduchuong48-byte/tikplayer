@@ -84,6 +84,7 @@ alist_instances: Dict[str, dict] = {}
 video_pool: List[Dict[str, str]] = []
 scan_lock = asyncio.Lock()
 transcode_semaphore = asyncio.Semaphore(3)  # 最多3个并发转码
+background_tasks: set = set()  # 后台任务追踪
 token_cache: Dict[str, Dict[str, object]] = {}
 persisted_tokens: Dict[str, str] = {}
 token_cipher: Optional[Fernet] = None
@@ -230,6 +231,28 @@ def validate_alist_url(url: str) -> str:
         raise HTTPException(status_code=400, detail=f"URL 验证失败: {str(e)}")
     
         return url
+
+def _task_done_callback(task: asyncio.Task) -> None:
+    """后台任务完成回调：记录异常"""
+    background_tasks.discard(task)
+    try:
+        exc = task.exception()
+    except asyncio.CancelledError:
+        return
+    except Exception as e:
+        print(f"[task-callback-error] {e}")
+        return
+    if exc:
+        print(f"[task-failed] {type(exc).__name__}: {exc}")
+
+def spawn_background_task(coro, description: str = ""):
+    """启动后台任务并添加异常监控"""
+    task = asyncio.create_task(coro)
+    background_tasks.add(task)
+    task.add_done_callback(_task_done_callback)
+    if description:
+        print(f"[task-spawn] {description}")
+    return task
 
 def atomic_json_dump(path: str, data: object) -> None:
     """原子写入 JSON 文件，防止并发损坏"""
