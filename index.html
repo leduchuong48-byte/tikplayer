@@ -420,6 +420,21 @@
                 const initSrc = state.sources[0]; const initPath = (initSrc.selected_paths && initSrc.selected_paths.length) ? initSrc.selected_paths[0] : (initSrc.root_path || '/');
                 state.currentPath = initPath; renderSourceTabs(); loadNextVideo(true); browseFile(state.currentSource, initPath);
             } else { showToast("请添加源", "info"); switchTab('settings'); }
+            
+            // 页面离开时保存进度
+            window.addEventListener('beforeunload', () => {
+                const current = state.videoStack[state.currentIndex];
+                if (current && state.dp && state.dp.video && state.dp.video.currentTime > 10) {
+                    try {
+                        const progressKey = 'videoProgress_' + current.source + '_' + current.raw_path;
+                        localStorage.setItem(progressKey, JSON.stringify({
+                            position: state.dp.video.currentTime,
+                            duration: state.dp.video.duration,
+                            timestamp: Date.now()
+                        }));
+                    } catch(e) {}
+                }
+            });
         };
 
         function initSearchHandlers() {
@@ -1001,16 +1016,38 @@
                                     try { video._hls.stopLoad(); video._hls.detachMedia(); video._hls.destroy(); } catch(e) {}
                                 }
                                 const hls = new Hls({
-                                    fragLoadingMaxRetry: 6,
-                                    fragLoadingRetryDelay: 1000,
-                                    manifestLoadingMaxRetry: 3,
-                                    levelLoadingMaxRetry: 4,
-                                    appendErrorMaxRetry: 5,
+                                    // 使用现代 LoadPolicy 替代弃用的 retry 参数
+                                    fragLoadPolicy: {
+                                        default: {
+                                            maxTimeToFirstByteMs: 10000,
+                                            maxLoadTimeMs: 120000,
+                                            timeoutRetry: { maxNumRetry: 4, retryDelayMs: 0, maxRetryDelayMs: 0 },
+                                            errorRetry: { maxNumRetry: 6, retryDelayMs: 1000, maxRetryDelayMs: 8000 }
+                                        }
+                                    },
+                                    manifestLoadPolicy: {
+                                        default: {
+                                            maxTimeToFirstByteMs: Infinity,
+                                            maxLoadTimeMs: 20000,
+                                            timeoutRetry: { maxNumRetry: 2, retryDelayMs: 0, maxRetryDelayMs: 0 },
+                                            errorRetry: { maxNumRetry: 3, retryDelayMs: 1000, maxRetryDelayMs: 8000 }
+                                        }
+                                    },
+                                    playlistLoadPolicy: {
+                                        default: {
+                                            maxTimeToFirstByteMs: 10000,
+                                            maxLoadTimeMs: 20000,
+                                            timeoutRetry: { maxNumRetry: 2, retryDelayMs: 0, maxRetryDelayMs: 0 },
+                                            errorRetry: { maxNumRetry: 4, retryDelayMs: 1000, maxRetryDelayMs: 8000 }
+                                        }
+                                    },
                                     enableWorker: true,
                                     lowLatencyMode: false,
                                     backBufferLength: 90,
                                     maxBufferLength: 30,
-                                    maxBufferHole: 0.5
+                                    maxBufferHole: 0.5,
+                                    capLevelToPlayerSize: true,  // 移动端/弱设备防掉帧
+                                    startLevel: -1  // 自适应起始码率
                                 });
                                 hls.loadSource(playUrl);
                                 hls.attachMedia(video);
@@ -1018,11 +1055,18 @@
                                 state.mediaState.hlsInstance = hls;
 
                                 let hlsFatalCount = 0;
+                                let lastRecoverTime = 0;  // 恢复冷却窗口
                                 hls.on(Hls.Events.ERROR, function (event, data) {
                                     if (!data.fatal) return;
                                     hlsFatalCount++;
                                     if (playbackStarted) {
-                                        // 已开始播放后：只做内部恢复，不重建播放器
+                                        // 已开始播放后：带冷却窗口的内部恢复
+                                        const now = Date.now();
+                                        if (now - lastRecoverTime < 5000) {
+                                            console.warn('HLS恢复过于频繁，跳过本次');
+                                            return;
+                                        }
+                                        lastRecoverTime = now;
                                         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
                                         else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
                                         return;
@@ -1067,18 +1111,47 @@
                     state.dp.video.setAttribute('autoplay', 'autoplay');
                     state.dp.video.preload = 'auto';
 
-                    // 进度条更新
+                    // 进度条更新 + 定期保存进度
+                    let lastProgressSave = 0;
                     state.dp.video.addEventListener('timeupdate', () => {
                         if(state.dp && state.dp.video && state.dp.video.duration) {
                             document.getElementById('progressCurrent').style.width = (state.dp.video.currentTime / state.dp.video.duration) * 100 + '%';
+                            
+                            // 每 5 秒保存一次进度
+                            const now = Date.now();
+                            if (now - lastProgressSave > 5000 && state.dp.video.currentTime > 10) {
+                                lastProgressSave = now;
+                                try {
+                                    const progressKey = 'videoProgress_' + media.source + '_' + media.raw_path;
+                                    localStorage.setItem(progressKey, JSON.stringify({
+                                        position: state.dp.video.currentTime,
+                                        duration: state.dp.video.duration,
+                                        timestamp: now
+                                    }));
+                                } catch(e) {}
+                            }
                         }
                     });
 
-                    // 视频可播放 → 标记 playbackStarted，取消加载状态
+                    // 视频可播放 → 标记 playbackStarted，恢复进度，取消加载状态
                     state.dp.video.addEventListener('canplay', () => {
                         if (playToken !== state.mediaState.playRequestToken) return;
                         playbackStarted = true;
                         setLoading(false);
+                        
+                        // 恢复播放进度
+                        try {
+                            const progressKey = 'videoProgress_' + media.source + '_' + media.raw_path;
+                            const saved = localStorage.getItem(progressKey);
+                            if (saved && state.dp.video.duration > 0) {
+                                const progress = JSON.parse(saved);
+                                if (progress.position > 10 && progress.position < state.dp.video.duration - 5) {
+                                    state.dp.video.currentTime = progress.position;
+                                    console.log('恢复播放进度:', progress.position);
+                                }
+                            }
+                        } catch(e) {}
+                        
                         state.dp.play().catch(() => {
                             state.dp.video.muted = true;
                             state.dp.play().catch(() => {});
@@ -1091,9 +1164,14 @@
                         setLoading(false);
                     }, { once: true });
 
-                    // 视频播完 → 手动循环（替代 loop:true，避免 302 redirect 问题）
+                    // 视频播完 → 清除进度 + 手动循环
                     state.dp.video.addEventListener('ended', () => {
                         if (playToken !== state.mediaState.playRequestToken) return;
+                        // 清除播放进度
+                        try {
+                            const progressKey = 'videoProgress_' + media.source + '_' + media.raw_path;
+                            localStorage.removeItem(progressKey);
+                        } catch(e) {}
                         if (state.dp && state.dp.video) {
                             state.dp.video.currentTime = 0;
                             state.dp.play().catch(() => {});
