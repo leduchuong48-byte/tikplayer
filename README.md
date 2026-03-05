@@ -1,6 +1,6 @@
-# TikPlayer
+# Tikplayer
 
-![TikPlayer UI](https://raw.githubusercontent.com/leduchuong48-byte/tikplayer/main/images/ui/desktop.png)
+![Tikplayer UI](https://raw.githubusercontent.com/leduchuong48-byte/tikplayer/main/images/ui/desktop.png)
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/leduchuong/tikplayer?logo=docker&label=Docker%20Pulls)](https://hub.docker.com/r/leduchuong/tikplayer)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/leduchuong48-byte/tikplayer/blob/main/LICENSE)
@@ -11,10 +11,15 @@
 
 > Better alternative to web-file-player for E-ink devices.
 
-TikPlayer 是一个面向 NAS/HomeLab 的轻量级视频在线播放与管理服务，重点解决“多终端访问、硬解兼容、部署复杂度高”的问题。
+Tikplayer 是一个面向 NAS/HomeLab 的轻量级视频在线播放与管理服务，重点解决“多终端访问、硬解兼容、部署复杂度高”的问题。
 
 ## 版本更新
 
+- `v2.3`：修复进度条拖动后偶发卡死，`seek` 改为状态闭环并增加超时自动恢复。
+- `v2.3`：新增 `waiting/stalled` 软恢复机制，播放中网络抖动时自动自愈。
+- `v2.3`：优化 HLS 缓冲参数（`nudge/maxBufferHole/watchdog`），降低移动端卡顿率。
+- `v2.3`：修复中文源名 URL 编码问题，避免部分资源请求异常。
+- `v2.3`：升级 `hls.js` 到 `1.6.15`，并统一项目/镜像/UI 版本为 `2.3`。
 - `v2.2`：`reload` 从布尔锁升级为“队列 + 进度百分比 + 阶段状态”，新增队列状态接口，避免“显示成功但实际未完成”。
 - `v2.2`：新增账号级 `random_enabled`，支持源“仅浏览不参与随机”；并在后端对随机池按路径去重，减少重叠源重复命中。
 - `v2.2`：`move/delete` 后按“同后端 + 路径”主动清理随机池脏条目，降低收纳后仍被随机命中的概率。
@@ -48,7 +53,7 @@ docker run -d \
   -p 1015:8000 \
   -v ./image:/app/image \
   -v ./data:/app/data \
-  docker.io/leduchuong/tikplayer:2.2
+  docker.io/leduchuong/tikplayer:2.3
 ```
 
 ## For Portainer/Synology Users
@@ -60,7 +65,7 @@ Copy this into Portainer stacks and hit Deploy. Done.
 ```yaml
 services:
   tikplayer:
-    image: docker.io/leduchuong/tikplayer:2.2
+    image: docker.io/leduchuong/tikplayer:2.3
     container_name: tikplayer
     restart: unless-stopped
     ports:

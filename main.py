@@ -4,14 +4,10 @@ import random
 import re
 import time
 import hashlib
-import socket
-import ipaddress
-from urllib.parse import urlparse
 import httpx
 import asyncio
 import urllib.parse
 import subprocess
-import tempfile
 from collections import deque
 from typing import List, Dict, Optional
 from contextlib import asynccontextmanager, suppress
@@ -23,12 +19,6 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from cryptography.fernet import Fernet, InvalidToken
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from secrets import compare_digest
-import hashlib
-import socket
-import ipaddress
-from urllib.parse import urlparse
 
 # --- 数据模型 ---
 class SourceModel(BaseModel):
@@ -38,21 +28,6 @@ class SourceModel(BaseModel):
     password: str = ""
     root_path: str = "/"
     selected_paths: List[str] = []
-
-class SourceOut(BaseModel):
-    """脱敏的源配置输出模型"""
-    name: str
-    url: str
-    root_path: str = "/"
-    selected_paths: List[str] = []
-    random_enabled: bool = True
-    username_masked: str = ""
-
-def mask_username(u: str) -> str:
-    """用户名脱敏"""
-    if not u or len(u) <= 2:
-        return "*" * len(u) if u else ""
-    return u[0] + "*" * (len(u) - 2) + u[-1]
     random_enabled: bool = True
 
 
@@ -84,7 +59,6 @@ alist_instances: Dict[str, dict] = {}
 video_pool: List[Dict[str, str]] = []
 scan_lock = asyncio.Lock()
 transcode_semaphore = asyncio.Semaphore(3)  # 最多3个并发转码
-background_tasks: set = set()  # 后台任务追踪
 token_cache: Dict[str, Dict[str, object]] = {}
 persisted_tokens: Dict[str, str] = {}
 token_cipher: Optional[Fernet] = None
@@ -142,146 +116,9 @@ MEDIA_EXTENSIONS = {
 }
 NATIVE_FORMATS = ('.mp4', '.webm', '.mov')
 APP_NAME = "Tikplayer"
-APP_VERSION = "2.2"
+APP_VERSION = "2.3"
 
 load_dotenv()
-
-# 鉴权配置
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD_HASH = os.getenv("ADMIN_PASSWORD_HASH", "")  # SHA256 hash
-AUTH_ENABLED = os.getenv("AUTH_ENABLED", "false").lower() in ("1", "true", "yes", "on")
-security = HTTPBasic()
-
-def verify_admin(credentials: HTTPBasicCredentials) -> bool:
-    """验证管理员凭证"""
-    if not AUTH_ENABLED:
-        return True  # 鉴权未启用时放行
-    
-    username_ok = compare_digest(credentials.username, ADMIN_USERNAME)
-    
-    if not ADMIN_PASSWORD_HASH:
-        # 未配置密码哈希时，拒绝所有请求
-        return False
-    
-    # 计算提供密码的 SHA256
-    provided_hash = hashlib.sha256(credentials.password.encode()).hexdigest()
-    password_ok = compare_digest(provided_hash, ADMIN_PASSWORD_HASH)
-    
-    return username_ok and password_ok
-
-def get_admin_user(credentials: HTTPBasicCredentials = Depends(security)):
-    """管理员依赖：验证失败抛 401"""
-    if not verify_admin(credentials):
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid credentials",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-    return credentials.username
-
-# SSRF 防护
-ALLOWED_HOSTS_ENV = os.getenv("ALLOWED_ALIST_HOSTS", "")
-ALLOWED_HOSTS = set(h.strip().lower() for h in ALLOWED_HOSTS_ENV.split(",") if h.strip()) if ALLOWED_HOSTS_ENV else None
-
-def validate_alist_url(url: str) -> str:
-    """验证 Alist URL，防止 SSRF"""
-    url = url.strip()
-    try:
-        p = urlparse(url)
-    except Exception:
-        raise HTTPException(status_code=400, detail="无效的 URL 格式")
-    
-    if p.scheme not in {"http", "https"}:
-        raise HTTPException(status_code=400, detail="仅允许 http/https 协议")
-    
-    if not p.hostname:
-        raise HTTPException(status_code=400, detail="URL 缺少主机名")
-    
-    host = p.hostname.lower()
-    
-    # 白名单检查（如果配置了）
-    if ALLOWED_HOSTS and host not in ALLOWED_HOSTS:
-        raise HTTPException(status_code=400, detail=f"主机 {host} 不在白名单中")
-    
-    # DNS 解析后 IP 检查
-    try:
-        port = p.port or (443 if p.scheme == "https" else 80)
-        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-        for info in infos:
-            ip_str = info[4][0]
-            try:
-                ip = ipaddress.ip_address(ip_str)
-                # 拒绝私网、回环、链路本地地址
-                if not ip.is_global:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"目标解析到非公网地址: {ip_str}"
-                    )
-                # 明确拒绝云元数据地址
-                if ip_str in ("169.254.169.254", "fd00:ec2::254"):
-                    raise HTTPException(status_code=400, detail="禁止访问元数据地址")
-            except ValueError:
-                # IPv6 解析失败等，保守拒绝
-                raise HTTPException(status_code=400, detail=f"无法验证 IP: {ip_str}")
-    except socket.gaierror:
-        raise HTTPException(status_code=400, detail=f"无法解析主机名: {host}")
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"URL 验证失败: {str(e)}")
-    
-        return url
-
-def _task_done_callback(task: asyncio.Task) -> None:
-    """后台任务完成回调：记录异常"""
-    background_tasks.discard(task)
-    try:
-        exc = task.exception()
-    except asyncio.CancelledError:
-        return
-    except Exception as e:
-        print(f"[task-callback-error] {e}")
-        return
-    if exc:
-        print(f"[task-failed] {type(exc).__name__}: {exc}")
-
-def spawn_background_task(coro, description: str = ""):
-    """启动后台任务并添加异常监控"""
-    task = asyncio.create_task(coro)
-    background_tasks.add(task)
-    task.add_done_callback(_task_done_callback)
-    if description:
-        print(f"[task-spawn] {description}")
-    return task
-
-def atomic_json_dump(path: str, data: object) -> None:
-    """原子写入 JSON 文件，防止并发损坏"""
-    parent = os.path.dirname(path) or "."
-    os.makedirs(parent, exist_ok=True)
-    
-    fd, tmp = tempfile.mkstemp(prefix=".tmp-", suffix=".json", dir=parent, text=True)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)  # 原子替换
-        # 持久化目录项（可选，某些文件系统需要）
-        try:
-            dir_fd = os.open(parent, os.O_DIRECTORY)
-            try:
-                os.fsync(dir_fd)
-            finally:
-                os.close(dir_fd)
-        except (OSError, AttributeError):
-            pass  # Windows 或某些文件系统不支持目录 fsync
-    except Exception:
-        if os.path.exists(tmp):
-            try:
-                os.unlink(tmp)
-            except Exception:
-                pass
-        raise
 
 
 def _build_source_env_prefix(source_name: str, index: int) -> str:
@@ -1257,7 +1094,7 @@ async def lifespan(app: FastAPI):
     shared_http_client = httpx.AsyncClient(
         limits=httpx.Limits(max_connections=100, max_keepalive_connections=20, keepalive_expiry=30.0),
         timeout=httpx.Timeout(connect=5.0, read=20.0, write=20.0, pool=5.0),
-        follow_redirects=False,  # SSRF 防护：禁止自动跟随重定向
+        follow_redirects=True,
     )
     await request_reload(reason="startup", dedupe=True)
     stale_prune_task = asyncio.create_task(periodic_stale_prune_loop())
@@ -1313,26 +1150,11 @@ async def get_manifest():
     raise HTTPException(status_code=404)
 
 # --- Source Config API ---
-@app.get("/v1/sources", response_model=List[SourceOut])
-async def get_sources():
-    """获取源配置（凭证已脱敏）"""
-    data = load_config()
-    return [
-        SourceOut(
-            name=s["name"],
-            url=s["url"],
-            root_path=s.get("root_path", "/"),
-            selected_paths=s.get("selected_paths", []),
-            random_enabled=bool(s.get("random_enabled", True)),
-            username_masked=mask_username(s.get("username", "")),
-        )
-        for s in data
-    ]
+@app.get("/v1/sources")
+async def get_sources(): return load_config()
 
 @app.post("/v1/sources")
-async def add_source(source: SourceModel, _admin: str = Depends(get_admin_user)):
-    # SSRF 防护：验证 URL
-    validate_alist_url(source.url)
+async def add_source(source: SourceModel):
     current = load_config()
     # 检查是否存在，存在则更新，不存在则添加
     existing = next((i for i, s in enumerate(current) if s['name'] == source.name), None)
@@ -1346,9 +1168,7 @@ async def add_source(source: SourceModel, _admin: str = Depends(get_admin_user))
 
 
 @app.post("/v1/source/test-login")
-async def test_source_login(payload: SourceAuthModel, _admin: str = Depends(get_admin_user)):
-    # SSRF 防护：验证 URL
-    validate_alist_url(payload.url)
+async def test_source_login(payload: SourceAuthModel):
     async with httpx.AsyncClient() as client:
         token, login_err = await get_source_token(client, payload.url, payload.username, payload.password, force_refresh=True)
     if not token:
@@ -1357,9 +1177,7 @@ async def test_source_login(payload: SourceAuthModel, _admin: str = Depends(get_
 
 
 @app.post("/v1/source/dirs")
-async def browse_source_dirs(payload: SourceDirsModel, _admin: str = Depends(get_admin_user)):
-    # SSRF 防护：验证 URL
-    validate_alist_url(payload.url)
+async def browse_source_dirs(payload: SourceDirsModel):
     username = payload.username or ""
     password = payload.password or ""
     async with httpx.AsyncClient() as client:
@@ -1387,7 +1205,7 @@ async def browse_source_dirs(payload: SourceDirsModel, _admin: str = Depends(get
     ]
 
 @app.post("/v1/reload")
-async def reload_sources(_admin: str = Depends(get_admin_user)):
+async def reload_sources():
     """手动触发源配置刷新"""
     try:
         snapshot = await request_reload(reason="manual", dedupe=False)
@@ -1485,7 +1303,7 @@ async def get_folders():
         return []
 
 @app.post("/v1/folders")
-async def save_folders(folders: List[dict], _admin: str = Depends(get_admin_user)):
+async def save_folders(folders: List[dict]):
     try:
         os.makedirs(DATA_DIR, exist_ok=True)
         with open(FOLDER_CONFIG_FILE, 'w', encoding='utf-8') as f:
@@ -1505,9 +1323,10 @@ async def get_random_video(request: Request):
 
 def build_media_response(request: Request, media: dict):
     encoded_path = urllib.parse.quote(media['path'])
-    stream_url = f"{request.base_url}v1/stream?source={media['source']}&path={encoded_path}"
-    transcode_url = f"{request.base_url}v1/transcode?source={media['source']}&path={encoded_path}"
-    download_url = f"{request.base_url}v1/download?source={media['source']}&path={encoded_path}"
+    encoded_source = urllib.parse.quote(str(media['source']), safe="")
+    stream_url = f"{request.base_url}v1/stream?source={encoded_source}&path={encoded_path}"
+    transcode_url = f"{request.base_url}v1/transcode?source={encoded_source}&path={encoded_path}"
+    download_url = f"{request.base_url}v1/download?source={encoded_source}&path={encoded_path}"
     is_native = media['path'].lower().endswith(NATIVE_FORMATS)
     return {
         "url": stream_url, "transcode_url": transcode_url, "download_url": download_url,
@@ -1763,7 +1582,7 @@ async def download_video(source: str, path: str):
 # --- File System Operations (Move, Delete, Rename, Mkdir) ---
 
 @app.post("/v1/delete_video")
-async def delete_video(payload: dict, _admin: str = Depends(get_admin_user)):
+async def delete_video(payload: dict):
     source_name = payload.get("source")
     file_path = payload.get("path")
     if not isinstance(file_path, str) or not file_path:
@@ -1810,7 +1629,7 @@ async def delete_video(payload: dict, _admin: str = Depends(get_admin_user)):
     else: raise HTTPException(status_code=500, detail=msg)
 
 @app.post("/v1/move_video")
-async def move_video(payload: dict, _admin: str = Depends(get_admin_user)):
+async def move_video(payload: dict):
     source_name, src_path, dst_dir = payload.get("source"), payload.get("src_path"), payload.get("dst_dir")
     if not all([source_name, src_path, dst_dir]): raise HTTPException(status_code=400)
     src_path = str(src_path)
@@ -1880,7 +1699,7 @@ async def move_video(payload: dict, _admin: str = Depends(get_admin_user)):
     raise HTTPException(status_code=500, detail=last_msg)
 
 @app.post("/v1/fs/rename")
-async def rename_file(payload: RenameModel, _admin: str = Depends(get_admin_user)):
+async def rename_file(payload: RenameModel):
     if payload.source not in alist_instances: raise HTTPException(status_code=404)
     instance = alist_instances[payload.source]
     base_url = instance['url'].rstrip('/').replace('/dav', '')
@@ -1896,7 +1715,7 @@ async def rename_file(payload: RenameModel, _admin: str = Depends(get_admin_user
     except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/v1/fs/mkdir")
-async def make_directory(payload: MkdirModel, _admin: str = Depends(get_admin_user)):
+async def make_directory(payload: MkdirModel):
     if payload.source not in alist_instances: raise HTTPException(status_code=404)
     instance = alist_instances[payload.source]
     base_url = instance['url'].rstrip('/').replace('/dav', '')
