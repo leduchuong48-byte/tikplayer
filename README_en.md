@@ -1,6 +1,6 @@
-# TikPlayer
+# Tikplayer
 
-![TikPlayer UI](https://raw.githubusercontent.com/leduchuong48-byte/tikplayer/main/images/ui/desktop.png)
+![Tikplayer UI](https://raw.githubusercontent.com/leduchuong48-byte/tikplayer/main/images/ui/desktop.png)
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/leduchuong/tikplayer?logo=docker&label=Docker%20Pulls)](https://hub.docker.com/r/leduchuong/tikplayer)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/leduchuong48-byte/tikplayer/blob/main/LICENSE)
@@ -11,10 +11,15 @@
 
 > Better alternative to web-file-player for E-ink devices.
 
-TikPlayer is a lightweight NAS/HomeLab media player service focused on simple deployment, hardware-friendly playback, and easy remote access.
+Tikplayer is a lightweight NAS/HomeLab media player service focused on simple deployment, hardware-friendly playback, and easy remote access.
 
 ## Release Notes
 
+- `v2.3`: Fixed occasional freeze after timeline dragging by introducing a seek state loop with timeout-based recovery.
+- `v2.3`: Added soft recovery on `waiting/stalled` to self-heal playback during network jitter.
+- `v2.3`: Tuned HLS buffering parameters (`nudge/maxBufferHole/watchdog`) for more stable mobile playback.
+- `v2.3`: Fixed URL encoding for non-ASCII source names to prevent request failures.
+- `v2.3`: Upgraded `hls.js` to `1.6.15` and unified project/image/UI version to `2.3`.
 - `v2.2`: `reload` moved from a boolean lock to a queue with progress percent and stage states, with queue status API added.
 - `v2.2`: Added per-source `random_enabled` to support browse-only sources, plus backend path-level dedup in random pool.
 - `v2.2`: On `move/delete`, random-pool stale entries are actively pruned by backend + path scope to improve collection consistency.
@@ -48,7 +53,7 @@ docker run -d \
   -p 1015:8000 \
   -v ./image:/app/image \
   -v ./data:/app/data \
-  docker.io/leduchuong/tikplayer:2.2
+  docker.io/leduchuong/tikplayer:2.3
 ```
 
 ## For Portainer/Synology Users
@@ -60,7 +65,7 @@ Copy this into Portainer stacks and hit Deploy. Done.
 ```yaml
 services:
   tikplayer:
-    image: docker.io/leduchuong/tikplayer:2.2
+    image: docker.io/leduchuong/tikplayer:2.3
     container_name: tikplayer
     restart: unless-stopped
     ports:

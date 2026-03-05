@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover,interactive-widget=resizes-content">
-    <title>Tikplayer 2.2</title>
+    <title>Tikplayer 2.3</title>
     
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -147,7 +147,7 @@
     </style>
 </head>
 <body>
-    <div class="app-brand-badge" id="appBrandBadge">Tikplayer 2.2</div>
+    <div class="app-brand-badge" id="appBrandBadge">Tikplayer 2.3</div>
     <svg xmlns="http://www.w3.org/2000/svg" style="display:none;">
         <symbol id="i-play" viewBox="0 0 384 512"><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80L0 432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></symbol>
         <symbol id="i-home" viewBox="0 0 576 512"><path d="M575.8 255.5c0 18-15 32.1-32 32.1l-32 0 .7 160.2c0 2.7-.2 5.4-.5 8.1l0 16.2c0 22.1-17.9 40-40 40l-16 0c-1.1 0-2.2 0-3.3-.1c-1.4 .1-2.8 .1-4.2 .1L416 512l-24 0c-22.1 0-40-17.9-40-40l0-24 0-64c0-17.7-14.3-32-32-32l-64 0c-17.7 0-32 14.3-32 32l0 64 0 24c0 22.1-17.9 40-40 40l-24 0-31.9 0c-1.5 0-3-.1-4.5-.2c-1.2 .1-2.4 .2-3.6 .2l-16 0c-22.1 0-40-17.9-40-40l0-112c0-.9 0-1.9 .1-2.8l0-69.7-32 0c-18 0-32-14-32-32.1c0-9 3-17 10-24L266.4 8c7-7 15-8 22-8s15 2 21 7L564.8 231.5c8 7 12 15 11 24z"/></symbol>
@@ -181,6 +181,14 @@
             <div class="center-icon" id="playIcon"><svg class="icon"><use href="#i-play"/></svg></div>
 
             <div class="right-controls">
+                <div class="control-item" data-action="reload-sources">
+                    <div class="control-icon"><svg class="icon" id="reloadIcon"><use href="#i-sync"/></svg></div>
+                    <span class="control-text">刷新源</span>
+                </div>
+                <div class="control-item" data-action="toggle-fullscreen"><div class="control-icon"><svg class="icon"><use href="#i-expand"/></svg></div><span class="control-text">全屏</span></div>
+                <div class="control-item" data-action="download-media"><div class="control-icon"><svg class="icon"><use href="#i-download"/></svg></div><span class="control-text">下载</span></div>
+                <div class="control-item" data-action="toggle-mute"><div class="control-icon"><svg class="icon" id="volIcon"><use href="#i-volume-mute"/></svg></div><span class="control-text" id="volText">静音</span></div>
+                <div class="control-item" data-action="toggle-landscape"><div class="control-icon"><svg class="icon"><use href="#i-mobile"/></svg></div><span class="control-text">旋转</span></div>
                 <div class="control-item" data-action="open-archive-root">
                     <div class="control-icon" style="background: rgba(254, 44, 85, 0.15); border: 1px solid rgba(254, 44, 85, 0.4);"><svg class="icon" style="color: #fe2c55; font-size: 18px;"><use href="#i-folder-open"/></svg></div>
                     <span class="control-text">收纳</span>
@@ -189,11 +197,6 @@
                     <div class="control-icon" style="background: rgba(255,255,255,0.08);"><svg class="icon" style="font-size: 18px;"><use href="#i-trash-alt"/></svg></div>
                     <span class="control-text">删除</span>
                 </div>
-                <div class="control-item" data-action="download-media"><div class="control-icon"><svg class="icon"><use href="#i-download"/></svg></div><span class="control-text">下载</span></div>
-                <div class="control-item" data-action="toggle-mute"><div class="control-icon"><svg class="icon" id="volIcon"><use href="#i-volume-mute"/></svg></div><span class="control-text" id="volText">静音</span></div>
-                <div class="control-item" data-action="toggle-landscape"><div class="control-icon"><svg class="icon"><use href="#i-mobile"/></svg></div><span class="control-text">旋转</span></div>
-                <div class="control-item" data-action="toggle-fullscreen"><div class="control-icon"><svg class="icon"><use href="#i-expand"/></svg></div><span class="control-text">全屏</span></div>
-                <div class="control-item" data-action="reload-sources"><div class="control-icon"><svg class="icon" id="reloadIcon"><use href="#i-sync"/></svg></div><span class="control-text">刷新源</span></div>
             </div>
 
             <div class="progress-container" id="progressBar">
@@ -368,7 +371,10 @@
                 playRequestToken: 0,
                 requestToken: 0,
                 preloadInFlight: false,
-                disableSeekReason: ''
+                disableSeekReason: '',
+                seekInFlight: false,
+                lastSeekAt: 0,
+                stalledRecoveryAt: 0
             }
         };
         let imageTimer = null;
@@ -420,21 +426,6 @@
                 const initSrc = state.sources[0]; const initPath = (initSrc.selected_paths && initSrc.selected_paths.length) ? initSrc.selected_paths[0] : (initSrc.root_path || '/');
                 state.currentPath = initPath; renderSourceTabs(); loadNextVideo(true); browseFile(state.currentSource, initPath);
             } else { showToast("请添加源", "info"); switchTab('settings'); }
-            
-            // 页面离开时保存进度
-            window.addEventListener('beforeunload', () => {
-                const current = state.videoStack[state.currentIndex];
-                if (current && state.dp && state.dp.video && state.dp.video.currentTime > 10) {
-                    try {
-                        const progressKey = 'videoProgress_' + current.source + '_' + current.raw_path;
-                        localStorage.setItem(progressKey, JSON.stringify({
-                            position: state.dp.video.currentTime,
-                            duration: state.dp.video.duration,
-                            timestamp: Date.now()
-                        }));
-                    } catch(e) {}
-                }
-            });
         };
 
         function initSearchHandlers() {
@@ -463,6 +454,15 @@
             const archiveSearch = document.getElementById('archiveSearchInput');
             if (archiveSearch) {
                 archiveSearch.addEventListener('input', () => onInputDebounced('archiveSearchInput', 'archiveSearchQuery', applyArchiveSearchFilter));
+            }
+
+            const accPathInput = document.getElementById('accPath');
+            if (accPathInput) {
+                accPathInput.addEventListener('input', () => {
+                    const manualPath = normalizePath(accPathInput.value || '/');
+                    state.uiState.selectedPaths = [manualPath];
+                    renderSelectedPaths();
+                });
             }
         }
 
@@ -910,6 +910,9 @@
         function resetPlayerUI() {
             clearTimeout(imageTimer); state.isImagePaused = false;
             state.mediaState.playRequestToken += 1;
+            state.mediaState.seekInFlight = false;
+            state.mediaState.lastSeekAt = 0;
+            state.mediaState.stalledRecoveryAt = 0;
             // 1) 先停 HLS 加载和解码（必须在 video 操作之前）
             if(state.mediaState.hlsInstance) {
                 try {
@@ -1016,38 +1019,19 @@
                                     try { video._hls.stopLoad(); video._hls.detachMedia(); video._hls.destroy(); } catch(e) {}
                                 }
                                 const hls = new Hls({
-                                    // 使用现代 LoadPolicy 替代弃用的 retry 参数
-                                    fragLoadPolicy: {
-                                        default: {
-                                            maxTimeToFirstByteMs: 10000,
-                                            maxLoadTimeMs: 120000,
-                                            timeoutRetry: { maxNumRetry: 4, retryDelayMs: 0, maxRetryDelayMs: 0 },
-                                            errorRetry: { maxNumRetry: 6, retryDelayMs: 1000, maxRetryDelayMs: 8000 }
-                                        }
-                                    },
-                                    manifestLoadPolicy: {
-                                        default: {
-                                            maxTimeToFirstByteMs: Infinity,
-                                            maxLoadTimeMs: 20000,
-                                            timeoutRetry: { maxNumRetry: 2, retryDelayMs: 0, maxRetryDelayMs: 0 },
-                                            errorRetry: { maxNumRetry: 3, retryDelayMs: 1000, maxRetryDelayMs: 8000 }
-                                        }
-                                    },
-                                    playlistLoadPolicy: {
-                                        default: {
-                                            maxTimeToFirstByteMs: 10000,
-                                            maxLoadTimeMs: 20000,
-                                            timeoutRetry: { maxNumRetry: 2, retryDelayMs: 0, maxRetryDelayMs: 0 },
-                                            errorRetry: { maxNumRetry: 4, retryDelayMs: 1000, maxRetryDelayMs: 8000 }
-                                        }
-                                    },
+                                    fragLoadingMaxRetry: 6,
+                                    fragLoadingRetryDelay: 1000,
+                                    manifestLoadingMaxRetry: 3,
+                                    levelLoadingMaxRetry: 4,
+                                    appendErrorMaxRetry: 5,
                                     enableWorker: true,
                                     lowLatencyMode: false,
-                                    backBufferLength: 90,
-                                    maxBufferLength: 30,
-                                    maxBufferHole: 0.5,
-                                    capLevelToPlayerSize: true,  // 移动端/弱设备防掉帧
-                                    startLevel: -1  // 自适应起始码率
+                                    nudgeOffset: 0.1,
+                                    nudgeMaxRetry: 6,
+                                    highBufferWatchdogPeriod: 2,
+                                    backBufferLength: 30,
+                                    maxBufferLength: 24,
+                                    maxBufferHole: 0.1
                                 });
                                 hls.loadSource(playUrl);
                                 hls.attachMedia(video);
@@ -1055,18 +1039,11 @@
                                 state.mediaState.hlsInstance = hls;
 
                                 let hlsFatalCount = 0;
-                                let lastRecoverTime = 0;  // 恢复冷却窗口
                                 hls.on(Hls.Events.ERROR, function (event, data) {
                                     if (!data.fatal) return;
                                     hlsFatalCount++;
                                     if (playbackStarted) {
-                                        // 已开始播放后：带冷却窗口的内部恢复
-                                        const now = Date.now();
-                                        if (now - lastRecoverTime < 5000) {
-                                            console.warn('HLS恢复过于频繁，跳过本次');
-                                            return;
-                                        }
-                                        lastRecoverTime = now;
+                                        // 已开始播放后：只做内部恢复，不重建播放器
                                         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
                                         else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
                                         return;
@@ -1109,49 +1086,63 @@
                     state.dp.video.setAttribute('webkit-playsinline', 'true');
                     state.dp.video.setAttribute('x5-playsinline', 'true');
                     state.dp.video.setAttribute('autoplay', 'autoplay');
-                    state.dp.video.preload = 'auto';
+                    state.dp.video.preload = 'metadata';
 
-                    // 进度条更新 + 定期保存进度
-                    let lastProgressSave = 0;
+                    let stallTimer = null;
+                    const clearStallTimer = () => {
+                        if (stallTimer) {
+                            clearTimeout(stallTimer);
+                            stallTimer = null;
+                        }
+                    };
+
+                    const trySoftRecover = (reason) => {
+                        if (!state.dp || !state.dp.video) return;
+                        const now = Date.now();
+                        if (now - state.mediaState.stalledRecoveryAt < 1800) return;
+                        state.mediaState.stalledRecoveryAt = now;
+                        const v = state.dp.video;
+                        console.warn('尝试恢复卡顿:', reason);
+                        if (state.mediaState.hlsInstance) {
+                            try { state.mediaState.hlsInstance.startLoad(v.currentTime || -1); } catch (_) {}
+                            try { state.mediaState.hlsInstance.recoverMediaError(); } catch (_) {}
+                        } else {
+                            try {
+                                const maxSeek = Number.isFinite(v.duration) ? Math.max(0, v.duration - 0.05) : null;
+                                const target = Math.max(0, v.currentTime + 0.01);
+                                v.currentTime = maxSeek === null ? target : Math.min(target, maxSeek);
+                            } catch (_) {}
+                        }
+                        Promise.resolve(v.play()).catch(() => {});
+                    };
+
+                    const scheduleSoftRecover = (reason) => {
+                        if (!state.dp || !state.dp.video) return;
+                        if (state.dp.video.paused || state.dp.video.ended) return;
+                        clearStallTimer();
+                        stallTimer = setTimeout(() => {
+                            if (!state.dp || !state.dp.video) return;
+                            if (state.dp.video.paused || state.dp.video.ended) return;
+                            if (state.mediaState.seekInFlight) return;
+                            if (state.dp.video.readyState >= 3) return;
+                            trySoftRecover(reason);
+                        }, 1200);
+                    };
+
+                    // 进度条更新
                     state.dp.video.addEventListener('timeupdate', () => {
+                        clearStallTimer();
                         if(state.dp && state.dp.video && state.dp.video.duration) {
                             document.getElementById('progressCurrent').style.width = (state.dp.video.currentTime / state.dp.video.duration) * 100 + '%';
-                            
-                            // 每 5 秒保存一次进度
-                            const now = Date.now();
-                            if (now - lastProgressSave > 5000 && state.dp.video.currentTime > 10) {
-                                lastProgressSave = now;
-                                try {
-                                    const progressKey = 'videoProgress_' + media.source + '_' + media.raw_path;
-                                    localStorage.setItem(progressKey, JSON.stringify({
-                                        position: state.dp.video.currentTime,
-                                        duration: state.dp.video.duration,
-                                        timestamp: now
-                                    }));
-                                } catch(e) {}
-                            }
                         }
                     });
 
-                    // 视频可播放 → 标记 playbackStarted，恢复进度，取消加载状态
+                    // 视频可播放 → 标记 playbackStarted，取消加载状态
                     state.dp.video.addEventListener('canplay', () => {
+                        clearStallTimer();
                         if (playToken !== state.mediaState.playRequestToken) return;
                         playbackStarted = true;
                         setLoading(false);
-                        
-                        // 恢复播放进度
-                        try {
-                            const progressKey = 'videoProgress_' + media.source + '_' + media.raw_path;
-                            const saved = localStorage.getItem(progressKey);
-                            if (saved && state.dp.video.duration > 0) {
-                                const progress = JSON.parse(saved);
-                                if (progress.position > 10 && progress.position < state.dp.video.duration - 5) {
-                                    state.dp.video.currentTime = progress.position;
-                                    console.log('恢复播放进度:', progress.position);
-                                }
-                            }
-                        } catch(e) {}
-                        
                         state.dp.play().catch(() => {
                             state.dp.video.muted = true;
                             state.dp.play().catch(() => {});
@@ -1160,18 +1151,31 @@
 
                     // playing 事件也标记（双保险，有些浏览器 canplay 不可靠）
                     state.dp.video.addEventListener('playing', () => {
+                        clearStallTimer();
                         playbackStarted = true;
                         setLoading(false);
                     }, { once: true });
 
-                    // 视频播完 → 清除进度 + 手动循环
+                    state.dp.video.addEventListener('seeking', () => {
+                        state.mediaState.seekInFlight = true;
+                        setLoading(true);
+                    });
+                    state.dp.video.addEventListener('seeked', () => {
+                        state.mediaState.seekInFlight = false;
+                        setLoading(false);
+                    });
+                    state.dp.video.addEventListener('waiting', () => {
+                        scheduleSoftRecover('waiting');
+                    });
+                    state.dp.video.addEventListener('stalled', () => {
+                        scheduleSoftRecover('stalled');
+                    });
+                    state.dp.video.addEventListener('pause', clearStallTimer);
+
+                    // 视频播完 → 手动循环（替代 loop:true，避免 302 redirect 问题）
                     state.dp.video.addEventListener('ended', () => {
+                        clearStallTimer();
                         if (playToken !== state.mediaState.playRequestToken) return;
-                        // 清除播放进度
-                        try {
-                            const progressKey = 'videoProgress_' + media.source + '_' + media.raw_path;
-                            localStorage.removeItem(progressKey);
-                        } catch(e) {}
                         if (state.dp && state.dp.video) {
                             state.dp.video.currentTime = 0;
                             state.dp.play().catch(() => {});
@@ -1446,13 +1450,14 @@
         
         function fillAccountForm(idx) {
             const s = state.sources[idx];
+            const sourcePaths = (s.selected_paths && s.selected_paths.length ? s.selected_paths : [s.root_path || '/']).map(p => normalizePath(p));
             document.getElementById('accName').value = s.name;
             document.getElementById('accUrl').value = s.url;
-            document.getElementById('accPath').value = s.root_path;
+            document.getElementById('accPath').value = sourcePaths[0] || normalizePath(s.root_path || '/');
             document.getElementById('accUser').value = s.username;
             document.getElementById('accPass').value = s.password;
             document.getElementById('accRandomEnabled').checked = isRandomEnabled(s);
-            state.uiState.selectedPaths = (s.selected_paths && s.selected_paths.length ? s.selected_paths : [s.root_path || '/']).map(p => normalizePath(p));
+            state.uiState.selectedPaths = sourcePaths;
             renderSelectedPaths();
             document.getElementById('btnSaveAccount').innerText = "保存修改";
             document.getElementById('btnCancelEditAccount').style.display = "inline-block";
@@ -1471,8 +1476,14 @@
         async function saveAccountItem() {
             const d = getAccountDraft();
             if(!d.name || !d.url) return showToast("信息不全");
-            const selectedPaths = state.uiState.selectedPaths.length ? state.uiState.selectedPaths : [d.root_path];
-            const payload = {...d, root_path: selectedPaths[0], selected_paths: selectedPaths};
+            const manualRootPath = normalizePath(document.getElementById('accPath').value.trim() || '/');
+            let selectedPaths = state.uiState.selectedPaths.length
+                ? state.uiState.selectedPaths.map(p => normalizePath(p))
+                : [manualRootPath];
+            if ((selectedPaths[0] || '/') !== manualRootPath) {
+                selectedPaths = [manualRootPath];
+            }
+            const payload = {...d, root_path: manualRootPath, selected_paths: selectedPaths};
 
             try {
                 const res = await fetch('/v1/sources', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
@@ -1627,7 +1638,6 @@
             let dragging = false;
             let activePointerId = null;
             let pendingProgress = null;
-            let pausedByDrag = false;
             let lastWarnAt = 0;
 
             const warnOnce = (message) => {
@@ -1669,13 +1679,78 @@
                     pendingProgress = null;
                     return;
                 }
+                if (state.mediaState.seekInFlight) {
+                    pendingProgress = null;
+                    return;
+                }
+                const video = state.dp && state.dp.video;
+                if (!video) {
+                    pendingProgress = null;
+                    return;
+                }
                 const duration = state.dp.video.duration;
-                const target = duration * pendingProgress;
+                const maxSeek = Math.max(0, duration - 0.05);
+                const target = Math.min(maxSeek, Math.max(0, duration * pendingProgress));
+                const resumeAfterSeek = !video.paused;
                 pendingProgress = null;
-                state.dp.video.currentTime = target;
-                if (typeof state.dp.seek === 'function') state.dp.seek(target);
-                if ('currentTime' in state.dp) {
-                    try { state.dp.currentTime = target; } catch (_) {}
+
+                state.mediaState.seekInFlight = true;
+                state.mediaState.lastSeekAt = Date.now();
+                setLoading(true);
+
+                let settled = false;
+                let seekTimer = null;
+                let seekedHandler = null;
+                let playingHandler = null;
+                let errorHandler = null;
+                let canplayHandler = null;
+
+                const clearSeekHandlers = () => {
+                    if (seekTimer) clearTimeout(seekTimer);
+                    if (seekedHandler) video.removeEventListener('seeked', seekedHandler);
+                    if (playingHandler) video.removeEventListener('playing', playingHandler);
+                    if (errorHandler) video.removeEventListener('error', errorHandler);
+                    if (canplayHandler) video.removeEventListener('canplay', canplayHandler);
+                    seekTimer = null;
+                    seekedHandler = null;
+                    playingHandler = null;
+                    errorHandler = null;
+                    canplayHandler = null;
+                };
+
+                const finishSeek = (ok) => {
+                    if (settled) return;
+                    settled = true;
+                    clearSeekHandlers();
+                    state.mediaState.seekInFlight = false;
+                    setLoading(false);
+                    if (!ok) {
+                        warnOnce('定位较慢，已自动尝试恢复');
+                        if (state.mediaState.hlsInstance) {
+                            try { state.mediaState.hlsInstance.startLoad(target); } catch (_) {}
+                            try { state.mediaState.hlsInstance.recoverMediaError(); } catch (_) {}
+                        }
+                    }
+                    if (resumeAfterSeek) Promise.resolve(video.play()).catch(() => {});
+                };
+
+                seekedHandler = () => finishSeek(true);
+                playingHandler = () => finishSeek(true);
+                canplayHandler = () => {
+                    if (Math.abs(video.currentTime - target) <= 1) finishSeek(true);
+                };
+                errorHandler = () => finishSeek(false);
+
+                video.addEventListener('seeked', seekedHandler, { once: true });
+                video.addEventListener('playing', playingHandler, { once: true });
+                video.addEventListener('canplay', canplayHandler, { once: true });
+                video.addEventListener('error', errorHandler, { once: true });
+
+                seekTimer = setTimeout(() => finishSeek(false), 2600);
+                try {
+                    video.currentTime = target;
+                } catch (_) {
+                    finishSeek(false);
                 }
             };
 
@@ -1683,10 +1758,6 @@
                 if (!canSeekNow()) return;
                 dragging = true;
                 activePointerId = pointerId;
-                pausedByDrag = !!(state.dp && state.dp.video && !state.dp.video.paused);
-                if (pausedByDrag && typeof state.dp.pause === 'function') {
-                    state.dp.pause();
-                }
                 previewAt(clientX);
             };
 
@@ -1696,10 +1767,6 @@
                 dragging = false;
                 activePointerId = null;
                 commitPendingSeek();
-                if (pausedByDrag && state.dp && typeof state.dp.play === 'function') {
-                    Promise.resolve(state.dp.play()).catch(() => {});
-                }
-                pausedByDrag = false;
             };
 
             bar.addEventListener('click', (e) => {
