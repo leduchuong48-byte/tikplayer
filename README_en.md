@@ -16,24 +16,21 @@
 
 ## Overview
 
-Tikplayer is a lightweight self-hosted media browsing and playback web app for NAS / HomeLab environments, with multi-source browsing, playback controls, and quick organize actions.
+Tikplayer is a lightweight self-hosted media browser/player for NAS and HomeLab use cases.
 
 ## Interface
 
 ### Web UI (2.4)
 
-> Screenshots below are captured from an isolated demo instance.
-
-![Home](https://raw.githubusercontent.com/leduchuong48-byte/tikplayer/main/docs/ui/home-v24.png)
-![Files](https://raw.githubusercontent.com/leduchuong48-byte/tikplayer/main/docs/ui/files-v24.png)
-![Profile](https://raw.githubusercontent.com/leduchuong48-byte/tikplayer/main/docs/ui/profile-v24.png)
+> Screenshots are intentionally removed due to privacy requirements.
+> Please preview UI only in an isolated local demo environment.
 
 ## Support Matrix
 
 | Category | Support |
 |---|---|
 | Runtime | FastAPI + Web UI |
-| Core Use Cases | playback, browsing, quick organize, basic file actions |
+| Core Use Cases | playback, browsing, quick organize, file actions |
 | Deployment | Docker / Docker Compose / N97 |
 
 ## Installation
@@ -70,15 +67,15 @@ services:
 
 - Core files: `sources.json`, `folders.json`
 - Runtime env: `.env`
-- Production recommendation: enable auth and SSRF host restrictions.
+- Production recommendation: enable auth and host restrictions.
 
 ## Upgrade Notes (2.4 vs 2.3)
 
-- Version bump aligned to `2.4` across Dockerfile and UI labels.
-- UI navigation and directory back action improved.
-- Folder config model enhanced with ID/status/sort/note/last-used fields.
+- Version markers aligned to `2.4`.
+- Improved Web UI navigation and folder-back interaction.
+- Enhanced folder config model with stable ID/status/sort/note/last-used fields.
 - Added `sw.js` and `offline.html` routes for better PWA/offline behavior.
-- Added folder item CRUD and target-folder delete API flow for finer management.
+- Added folder item CRUD and target-folder delete APIs.
 - Upgrade from `2.3` to `2.4` is recommended.
 
 ## Support & Contribution
