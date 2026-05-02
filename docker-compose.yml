@@ -2,7 +2,7 @@ name: tikplayer
 
 services:
   tikplayer:
-    image: tikplayer:2.3
+    image: tikplayer:2.4
     container_name: tikplayer
     restart: unless-stopped
     ports:
@@ -19,6 +19,7 @@ services:
     volumes:
       - ./image:/app/image
       - ./data:/app/data
+      - ./index.html:/app/index.html:ro
     shm_size: "2gb"
     logging:
       driver: "json-file"

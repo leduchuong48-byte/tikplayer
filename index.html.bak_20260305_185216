@@ -3,14 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover,interactive-widget=resizes-content">
-    <title>Tikplayer 2.4</title>
+    <title>Tikplayer 2.2</title>
     
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#000000">
     <link rel="manifest" href="/manifest.json">
-    <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
 
     <script src="/static/hls.min.js"></script>
     <script src="/static/artplayer.js"></script>
@@ -80,10 +79,6 @@
 
         /* File & Settings */
         .file-header { padding: 10px 15px; background: var(--card-bg); display: flex; gap: 10px; align-items: center; position: relative; top: 0; z-index: 20; border-bottom: 1px solid #222; }
-        .go-up-btn { width: 34px; height: 34px; border-radius: 10px; display:flex; align-items:center; justify-content:center; border:1px solid #3a3a3a; background:#232323; color:#f3f3f3; cursor:pointer; flex:0 0 auto; }
-        .go-up-btn .icon { font-size:18px; }
-        .go-up-btn:active { transform: scale(0.96); background:#2c2c2c; }
-        .go-up-btn:disabled { opacity:0.35; cursor:not-allowed; background:#1a1a1a; color:#888; border-color:#2a2a2a; }
         .breadcrumb { flex: 1; overflow-x: auto; white-space: nowrap; font-size: 12px; color: #888; }
         .file-list { padding: 5px; }
         .file-item { display: flex; align-items: center; padding: 12px 10px; margin-bottom: 4px; background: #1e1e1e; border-radius: 6px; transition: background 0.2s; }
@@ -152,7 +147,7 @@
     </style>
 </head>
 <body>
-    <div class="app-brand-badge" id="appBrandBadge">Tikplayer 2.4</div>
+    <div class="app-brand-badge" id="appBrandBadge">Tikplayer 2.2</div>
     <svg xmlns="http://www.w3.org/2000/svg" style="display:none;">
         <symbol id="i-play" viewBox="0 0 384 512"><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80L0 432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></symbol>
         <symbol id="i-home" viewBox="0 0 576 512"><path d="M575.8 255.5c0 18-15 32.1-32 32.1l-32 0 .7 160.2c0 2.7-.2 5.4-.5 8.1l0 16.2c0 22.1-17.9 40-40 40l-16 0c-1.1 0-2.2 0-3.3-.1c-1.4 .1-2.8 .1-4.2 .1L416 512l-24 0c-22.1 0-40-17.9-40-40l0-24 0-64c0-17.7-14.3-32-32-32l-64 0c-17.7 0-32 14.3-32 32l0 64 0 24c0 22.1-17.9 40-40 40l-24 0-31.9 0c-1.5 0-3-.1-4.5-.2c-1.2 .1-2.4 .2-3.6 .2l-16 0c-22.1 0-40-17.9-40-40l0-112c0-.9 0-1.9 .1-2.8l0-69.7-32 0c-18 0-32-14-32-32.1c0-9 3-17 10-24L266.4 8c7-7 15-8 22-8s15 2 21 7L564.8 231.5c8 7 12 15 11 24z"/></symbol>
@@ -214,9 +209,7 @@
             <div class="files-topbar">
                 <div class="source-selector" id="sourceTabs"></div>
                 <div class="file-header">
-                    <button type="button" id="goUpBtn" class="go-up-btn" data-action="go-up-dir" aria-label="返回上一级目录" title="返回上一级目录">
-                        <svg class="icon"><use href="#i-arrow-left"/></svg>
-                    </button>
+                    <svg class="icon" data-action="go-up-dir" style="padding:8px;color:#aaa;font-size:16px;cursor:pointer;"><use href="#i-arrow-left"/></svg>
                     <div class="breadcrumb" id="breadcrumb">/</div>
                     <div style="display:flex;gap:15px;align-items:center;">
                          <svg class="icon" style="font-size:16px;color:#ddd;cursor:pointer;" data-action="mkdir-prompt"><use href="#i-folder-plus"/></svg>
@@ -242,7 +235,7 @@
                     <div style="margin-top:10px;padding-top:10px;border-top:1px solid #222;">
                         <div class="form-group"><input type="text" id="newFolderName" placeholder="显示名称"></div>
                         <div style="display:flex;gap:8px;margin-bottom:8px;">
-                            <input type="text" id="newFolderPath" placeholder="Alist路径(可编辑)" style="flex:2;">
+                            <input type="text" id="newFolderPath" placeholder="Alist路径" style="flex:2;" readonly>
                             <select id="newFolderType" style="background:#111;color:#fff;border:1px solid #333;border-radius:6px;width:80px;">
                                 <option value="direct">直达</option>
                                 <option value="group">目录组</option>
@@ -350,7 +343,7 @@
             sources: [], currentSource: null, currentPath: '/', 
             useTranscode: false, quickFolders: [], dp: null, isMuted: true, playMode: 'random', isImagePaused: false,
             archivePath: 'root',
-            editFolderId: null, editFolderIdx: -1, editAccountIdx: -1, // 编辑状态索引
+            editFolderIdx: -1, editAccountIdx: -1, // 编辑状态索引
             ctxFile: null, // 当前操作的文件
             abortController: {
                 browseFile: null,
@@ -378,10 +371,7 @@
                 playRequestToken: 0,
                 requestToken: 0,
                 preloadInFlight: false,
-                disableSeekReason: '',
-                seekInFlight: false,
-                lastSeekAt: 0,
-                stalledRecoveryAt: 0
+                disableSeekReason: ''
             }
         };
         let imageTimer = null;
@@ -490,16 +480,8 @@
 
         async function parseActionResponse(res) {
             const body = await res.json().catch(() => ({}));
-            const ok = !!(res.ok && body && (body.status === 'success' || body.status === 'confirmed' || body.status === 'pending'));
+            const ok = !!(res.ok && body && body.status === 'success');
             return { ok, body };
-        }
-
-        function getActionMessage(body, fallback) {
-            if (body && typeof body.message === 'string' && body.message) return body.message;
-            if (body && typeof body.detail === 'string' && body.detail) return body.detail;
-            if (body && body.detail && typeof body.detail.message === 'string' && body.detail.message) return body.detail.message;
-            if (body && body.detail && typeof body.detail.detail === 'string' && body.detail.detail) return body.detail.detail;
-            return fallback;
         }
 
         function dispatchAction(action, el, event) {
@@ -538,11 +520,8 @@
             }
             else if (action === 'settings-account-edit') fillAccountForm(Number(el.dataset.index));
             else if (action === 'settings-account-del') delAccount(decodeURIComponent(el.dataset.name || ''));
-            else if (action === 'settings-folder-edit') fillFolderFormById(el.dataset.id || '');
-            else if (action === 'settings-folder-del') delQuickFolderById(el.dataset.id || '');
-            else if (action === 'settings-folder-del-target') delQuickFolderTargetById(el.dataset.id || '');
-            else if (action === 'settings-folder-toggle') toggleQuickFolderById(el.dataset.id || '');
-            else if (action === 'settings-folder-copy-path') copyQuickFolderPathById(el.dataset.id || '');
+            else if (action === 'settings-folder-edit') fillFolderForm(Number(el.dataset.index));
+            else if (action === 'settings-folder-del') delQuickFolder(Number(el.dataset.index));
             else if (action === 'change-source') changeSource(decodeURIComponent(el.dataset.source || ''));
             else if (action === 'test-openlist') testOpenListConnection();
             else if (action === 'open-folder-picker') openFolderPicker();
@@ -928,9 +907,6 @@
         function resetPlayerUI() {
             clearTimeout(imageTimer); state.isImagePaused = false;
             state.mediaState.playRequestToken += 1;
-            state.mediaState.seekInFlight = false;
-            state.mediaState.lastSeekAt = 0;
-            state.mediaState.stalledRecoveryAt = 0;
             // 1) 先停 HLS 加载和解码（必须在 video 操作之前）
             if(state.mediaState.hlsInstance) {
                 try {
@@ -1044,12 +1020,9 @@
                                     appendErrorMaxRetry: 5,
                                     enableWorker: true,
                                     lowLatencyMode: false,
-                                    nudgeOffset: 0.1,
-                                    nudgeMaxRetry: 6,
-                                    highBufferWatchdogPeriod: 2,
-                                    backBufferLength: 30,
-                                    maxBufferLength: 24,
-                                    maxBufferHole: 0.1
+                                    backBufferLength: 90,
+                                    maxBufferLength: 30,
+                                    maxBufferHole: 0.5
                                 });
                                 hls.loadSource(playUrl);
                                 hls.attachMedia(video);
@@ -1104,52 +1077,10 @@
                     state.dp.video.setAttribute('webkit-playsinline', 'true');
                     state.dp.video.setAttribute('x5-playsinline', 'true');
                     state.dp.video.setAttribute('autoplay', 'autoplay');
-                    state.dp.video.preload = 'metadata';
-
-                    let stallTimer = null;
-                    const clearStallTimer = () => {
-                        if (stallTimer) {
-                            clearTimeout(stallTimer);
-                            stallTimer = null;
-                        }
-                    };
-
-                    const trySoftRecover = (reason) => {
-                        if (!state.dp || !state.dp.video) return;
-                        const now = Date.now();
-                        if (now - state.mediaState.stalledRecoveryAt < 1800) return;
-                        state.mediaState.stalledRecoveryAt = now;
-                        const v = state.dp.video;
-                        console.warn('尝试恢复卡顿:', reason);
-                        if (state.mediaState.hlsInstance) {
-                            try { state.mediaState.hlsInstance.startLoad(v.currentTime || -1); } catch (_) {}
-                            try { state.mediaState.hlsInstance.recoverMediaError(); } catch (_) {}
-                        } else {
-                            try {
-                                const maxSeek = Number.isFinite(v.duration) ? Math.max(0, v.duration - 0.05) : null;
-                                const target = Math.max(0, v.currentTime + 0.01);
-                                v.currentTime = maxSeek === null ? target : Math.min(target, maxSeek);
-                            } catch (_) {}
-                        }
-                        Promise.resolve(v.play()).catch(() => {});
-                    };
-
-                    const scheduleSoftRecover = (reason) => {
-                        if (!state.dp || !state.dp.video) return;
-                        if (state.dp.video.paused || state.dp.video.ended) return;
-                        clearStallTimer();
-                        stallTimer = setTimeout(() => {
-                            if (!state.dp || !state.dp.video) return;
-                            if (state.dp.video.paused || state.dp.video.ended) return;
-                            if (state.mediaState.seekInFlight) return;
-                            if (state.dp.video.readyState >= 3) return;
-                            trySoftRecover(reason);
-                        }, 1200);
-                    };
+                    state.dp.video.preload = 'auto';
 
                     // 进度条更新
                     state.dp.video.addEventListener('timeupdate', () => {
-                        clearStallTimer();
                         if(state.dp && state.dp.video && state.dp.video.duration) {
                             document.getElementById('progressCurrent').style.width = (state.dp.video.currentTime / state.dp.video.duration) * 100 + '%';
                         }
@@ -1157,7 +1088,6 @@
 
                     // 视频可播放 → 标记 playbackStarted，取消加载状态
                     state.dp.video.addEventListener('canplay', () => {
-                        clearStallTimer();
                         if (playToken !== state.mediaState.playRequestToken) return;
                         playbackStarted = true;
                         setLoading(false);
@@ -1169,30 +1099,12 @@
 
                     // playing 事件也标记（双保险，有些浏览器 canplay 不可靠）
                     state.dp.video.addEventListener('playing', () => {
-                        clearStallTimer();
                         playbackStarted = true;
                         setLoading(false);
                     }, { once: true });
 
-                    state.dp.video.addEventListener('seeking', () => {
-                        state.mediaState.seekInFlight = true;
-                        setLoading(true);
-                    });
-                    state.dp.video.addEventListener('seeked', () => {
-                        state.mediaState.seekInFlight = false;
-                        setLoading(false);
-                    });
-                    state.dp.video.addEventListener('waiting', () => {
-                        scheduleSoftRecover('waiting');
-                    });
-                    state.dp.video.addEventListener('stalled', () => {
-                        scheduleSoftRecover('stalled');
-                    });
-                    state.dp.video.addEventListener('pause', clearStallTimer);
-
                     // 视频播完 → 手动循环（替代 loop:true，避免 302 redirect 问题）
                     state.dp.video.addEventListener('ended', () => {
-                        clearStallTimer();
                         if (playToken !== state.mediaState.playRequestToken) return;
                         if (state.dp && state.dp.video) {
                             state.dp.video.currentTime = 0;
@@ -1251,13 +1163,6 @@
             `).join('');
         }
 
-        function updateGoUpButtonState(path) {
-            const btn = document.getElementById('goUpBtn');
-            if (!btn) return;
-            const cur = normalizePath(path || state.currentPath || '/');
-            btn.disabled = (cur === '/');
-        }
-
         async function browseFile(source, path) {
             const signal = refreshAbortController('browseFile');
             const requestToken = ++state.uiState.browseRequestToken;
@@ -1269,7 +1174,6 @@
                 const files = await res.json();
                 state.currentFileList = files;
                 document.getElementById('breadcrumb').innerText = path;
-                updateGoUpButtonState(path);
                 renderFileList();
             } catch(e) {
                 if (e.name === 'AbortError') return;
@@ -1302,12 +1206,12 @@
                     method: 'POST', headers: {'Content-Type':'application/json'},
                     body: JSON.stringify({source: state.currentSource, path: state.ctxFile.path, new_name: newName})
                 });
-                const { ok, body } = await parseActionResponse(res);
-                if (!ok) {
-                    return showToast(getActionMessage(body, '重命名失败'));
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    return showToast(err.detail || '重命名失败');
                 }
                 await browseFile(state.currentSource, state.currentPath);
-                showToast(body.status === "pending" ? "已提交，稍后刷新确认" : "重命名成功");
+                showToast("重命名成功");
             } catch (e) {
                 showToast('网络错误');
             }
@@ -1328,10 +1232,10 @@
                 });
                 const { ok, body } = await parseActionResponse(res);
                 if (!ok) {
-                    return showToast(getActionMessage(body, '删除失败'));
+                    return showToast(body.detail || body.message || '删除失败');
                 }
                 await browseFile(state.currentSource, state.currentPath);
-                showToast(body.status === "pending" ? "已提交，稍后刷新确认" : "删除成功");
+                showToast("删除成功");
             } catch (e) {
                 showToast('网络错误');
             }
@@ -1366,52 +1270,6 @@
         }
         function closeArchiveDrawer() { document.getElementById('archiveDrawer').classList.remove('open'); document.getElementById('archiveBackdrop').classList.remove('open'); }
 
-        function getQuickFolderRecentMap() {
-            try {
-                const raw = localStorage.getItem('quick_folder_recent_use_v2') || localStorage.getItem('quick_folder_recent_use_v1') || '{}';
-                const obj = JSON.parse(raw);
-                return obj && typeof obj === 'object' ? obj : {};
-            } catch (_) {
-                return {};
-            }
-        }
-
-        function saveQuickFolderRecentMap(map) {
-            try {
-                localStorage.setItem('quick_folder_recent_use_v2', JSON.stringify(map || {}));
-            } catch (_) {}
-        }
-
-        function buildFolderRecentKey(source, path) {
-            return `${String(source || '')}::${normalizePath(path || '/')}`;
-        }
-
-        function getFolderRecentTimestamp(source, path, map) {
-            const key = buildFolderRecentKey(source, path);
-            return Number((map || {})[key] || 0);
-        }
-
-        function getArchiveRootFoldersSorted() {
-            const folders = Array.isArray(state.quickFolders) ? state.quickFolders.filter(f => f.enabled !== false) : [];
-            const recentMap = getQuickFolderRecentMap();
-            const toMs = (v) => {
-                const t = Date.parse(v || '');
-                return Number.isFinite(t) ? t : 0;
-            };
-            return folders.slice().sort((a, b) => {
-                const la = getFolderRecentTimestamp(a.source || state.currentSource || '', a.path || '/', recentMap);
-                const lb = getFolderRecentTimestamp(b.source || state.currentSource || '', b.path || '/', recentMap);
-                if (lb !== la) return lb - la;
-                const ta = toMs(a.last_used_at);
-                const tb = toMs(b.last_used_at);
-                if (tb !== ta) return tb - ta;
-                const sa = Number.isFinite(Number(a.sort_order)) ? Number(a.sort_order) : 100;
-                const sb = Number.isFinite(Number(b.sort_order)) ? Number(b.sort_order) : 100;
-                if (sa !== sb) return sa - sb;
-                return String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN');
-            });
-        }
-
         function applyArchiveSearchFilter() {
             const query = state.uiState.archiveSearchQuery;
             const archiveSearchInput = document.getElementById('archiveSearchInput');
@@ -1429,16 +1287,6 @@
             renderSearchCount('archiveSearchCount', visibleCount, slotButtons.length, query);
         }
 
-        function sortArchiveSubFoldersByRecent(source, folders) {
-            const recentMap = getQuickFolderRecentMap();
-            return (Array.isArray(folders) ? folders : []).slice().sort((a, b) => {
-                const ta = getFolderRecentTimestamp(source, a.path || '/', recentMap);
-                const tb = getFolderRecentTimestamp(source, b.path || '/', recentMap);
-                if (tb !== ta) return tb - ta;
-                return String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN');
-            });
-        }
-
         async function renderArchiveDrawer() {
             const grid = document.getElementById('archiveSlots');
             const title = document.getElementById('drawerTitle');
@@ -1446,7 +1294,7 @@
 
             if (state.archivePath === 'root') {
                 title.innerHTML = `<span><svg class="icon" style="margin-right:5px;"><use href="#i-share"/></svg>快速收纳</span>`;
-                grid.innerHTML = getArchiveRootFoldersSorted().map(f => `
+                grid.innerHTML = state.quickFolders.map(f => `
                     <div class="slot-btn" data-action="archive-handle-slot" data-type="${escapeHtml(f.type || 'direct')}" data-path="${encodeURIComponent(f.path || '')}" data-name="${encodeURIComponent(f.name || '')}">
                         <span class="slot-icon">${escapeHtml(f.icon || '')}</span>
                         <span class="slot-name">${escapeHtml(f.name || '')}</span>
@@ -1459,7 +1307,7 @@
                     const currentMedia = state.ctxMoveTarget || state.videoStack[state.currentIndex];
                     const res = await fetch(`/v1/browse?source=${encodeURIComponent(currentMedia.source)}&path=${encodeURIComponent(state.archivePath)}&unfiltered=true`);
                     const files = await res.json();
-                    const subFolders = sortArchiveSubFoldersByRecent(currentMedia.source, files.filter(f => f.is_dir));
+                    const subFolders = files.filter(f => f.is_dir);
                     grid.innerHTML = subFolders.map(f => `<div class="slot-btn" data-action="archive-move" data-path="${encodeURIComponent(f.path || '')}" data-name="${encodeURIComponent(f.name || '')}"><span class="slot-icon">📂</span><span class="slot-name">${escapeHtml(f.name || '')}</span></div>`).join('');
                     grid.innerHTML = `<div class="slot-btn" data-action="archive-move" data-path="${encodeURIComponent(state.archivePath)}" data-name="${encodeURIComponent('当前')}" style="border-color:var(--primary);color:var(--primary);"><span class="slot-icon">📍</span><span class="slot-name">此处</span></div>` + grid.innerHTML;
                 } catch(e) { grid.innerHTML = 'Error'; }
@@ -1468,25 +1316,6 @@
             initA11yButtons();
         }
         
-        async function markFolderUsedByPath(path, source) {
-            try {
-                const normalized = normalizePath(path || '/');
-                const recentMap = getQuickFolderRecentMap();
-                recentMap[buildFolderRecentKey(source || state.currentSource || '', normalized)] = Date.now();
-                saveQuickFolderRecentMap(recentMap);
-
-                // 若命中快捷收纳配置项，则同步后端 last_used_at（可选）
-                const item = (state.quickFolders || []).find(f => normalizePath(f.path || '/') === normalized && String(f.source || '') === String(source || state.currentSource || ''));
-                if (!item || !item.id) return;
-                const payload = { ...item, last_used_at: new Date().toISOString() };
-                const res = await fetch(`/v1/folders/${encodeURIComponent(item.id)}`, {
-                    method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
-                });
-                const { ok } = await parseActionResponse(res);
-                if (ok) await fetchFolders();
-            } catch (_) {}
-        }
-
         function handleSlotClick(type, path, name) {
             if(type === 'group') {
                 state.uiState.archiveSearchQuery = '';
@@ -1504,36 +1333,27 @@
                 const res = await fetch('/v1/move_video', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({source: current.source, src_path: current.raw_path, dst_dir: dst}) });
                 const { ok, body } = await parseActionResponse(res);
                 if(ok) {
-                    if (body.status === "pending") {
-                        showToast("已提交，稍后刷新确认");
-                    } else {
-                        await markFolderUsedByPath(dst, current.source);
-                        if (body.in_random_scope) showToast(`✅ 成功，目标目录仍在随机范围`);
-                        else showToast(`✅ 成功，目标目录已排除随机`);
-                    }
+                    if (body.in_random_scope) showToast(`✅ 成功，目标目录仍在随机范围`);
+                    else showToast(`✅ 成功，目标目录已排除随机`);
                     if(state.currentTab === 'play') setTimeout(() => loadNextVideo(true), 500);
                     else browseFile(state.currentSource, state.currentPath);
                 } else {
-                    showToast(`❌ ${getActionMessage(body, '移动失败')}`);
+                    showToast(`❌ ${body.detail || body.message || '移动失败'}`);
                 }
             } catch(e) { showToast("网络错误"); }
         }
 
         // --- Settings Edit Logic ---
-        function fillFolderFormById(id) {
-            const f = state.quickFolders.find(x => x.id === id);
-            if (!f) return showToast('配置不存在');
-            document.getElementById('newFolderName').value = f.name || '';
-            document.getElementById('newFolderPath').value = f.path || '/';
+        function fillFolderForm(idx) {
+            const f = state.quickFolders[idx];
+            document.getElementById('newFolderName').value = f.name;
+            document.getElementById('newFolderPath').value = f.path;
             state.uiState.quickFolderSelectedPath = normalizePath(f.path || '/');
             document.getElementById('newFolderType').value = f.type || 'direct';
-            const sourceSelect = document.getElementById('quickFolderSource');
-            if (sourceSelect && f.source) sourceSelect.value = encodeURIComponent(f.source);
             document.getElementById('btnSaveFolder').innerText = "保存修改";
             document.getElementById('btnCancelEditFolder').style.display = "inline-block";
             renderQuickFolderPath();
-            state.editFolderId = id;
-            state.editFolderIdx = state.quickFolders.findIndex(x => x.id === id);
+            state.editFolderIdx = idx;
         }
         function cancelEditFolder() {
             document.getElementById('newFolderName').value = "";
@@ -1542,38 +1362,20 @@
             document.getElementById('btnSaveFolder').innerText = "添加槽位";
             document.getElementById('btnCancelEditFolder').style.display = "none";
             renderQuickFolderPath();
-            state.editFolderId = null;
             state.editFolderIdx = -1;
         }
-        async function saveFolderItem() {
-            const name = (document.getElementById('newFolderName').value || '').trim();
+        function saveFolderItem() {
+            const name = document.getElementById('newFolderName').value;
             const path = normalizePath(document.getElementById('newFolderPath').value || state.uiState.quickFolderSelectedPath);
             const type = document.getElementById('newFolderType').value;
-            const sourceSelect = document.getElementById('quickFolderSource');
-            const source = sourceSelect ? decodeURIComponent(sourceSelect.value || '') : (state.currentSource || '');
-            if(!name || !path) return showToast('请先填写名称和路径');
-            const item = { id: state.editFolderId || undefined, name, path, icon: type==='group'?'📂':'📁', type, source };
-            try {
-                if (state.editFolderId) {
-                    const res = await fetch(`/v1/folders/${encodeURIComponent(state.editFolderId)}`, {
-                        method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(item)
-                    });
-                    const { ok, body } = await parseActionResponse(res);
-                    if (!ok) return showToast(getActionMessage(body, '保存失败'));
-                } else {
-                    const res = await fetch('/v1/folders/item', {
-                        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(item)
-                    });
-                    const { ok, body } = await parseActionResponse(res);
-                    if (!ok) return showToast(getActionMessage(body, '创建失败'));
-                }
-                await fetchFolders();
-                renderSettings();
-                cancelEditFolder();
-                showToast('收纳配置已保存');
-            } catch (e) {
-                showToast('网络错误');
-            }
+            if(!name || !path) return showToast('请先选择路径');
+            const item = { name, path, icon: type==='group'?'📂':'📁', type };
+            
+            if(state.editFolderIdx >= 0) state.quickFolders[state.editFolderIdx] = item;
+            else state.quickFolders.push(item);
+            
+            saveFoldersToServer();
+            cancelEditFolder();
         }
         
         function fillAccountForm(idx) {
@@ -1648,20 +1450,11 @@
             const filteredQuickFolders = filterByKeyword(state.quickFolders, q, (f) => `${f.name || ''} ${f.path || ''} ${f.type || ''}`);
             renderSearchCount('quickFolderSearchCount', filteredQuickFolders.length, state.quickFolders.length, q);
             document.getElementById('quickFolderList').innerHTML = filteredQuickFolders.map((f) => {
-                const fid = encodeURIComponent(f.id || '');
+                const i = state.quickFolders.indexOf(f);
                 return `
-                <div style="display:flex;justify-content:space-between;background:#222;padding:8px;border-radius:6px;margin-bottom:5px;font-size:12px;align-items:center;" data-action="settings-folder-edit" data-id="${fid}">
-                    <div style="display:flex;flex-direction:column;gap:4px;min-width:0;">
-                        <div style="display:flex;align-items:center;gap:5px;"><span>${escapeHtml(f.icon || '')}</span><span style="font-weight:bold;">${escapeHtml(f.name || '')}</span>${f.type==='group'?'<span style="font-size:9px;background:#333;padding:2px 4px;">组</span>':''}</div>
-                        <div style="font-size:10px;color:#8a8a8a;word-break:break-all;">${escapeHtml(f.path || '')}</div>
-                        <div style="font-size:10px;color:#6e6e6e;">来源: ${escapeHtml(f.source || '未指定')}</div>
-                    </div>
-                    <div style="display:flex;gap:6px;align-items:center;" data-stop-propagation="1">
-                        <button type="button" class="account-btn btn-muted-soft" style="padding:4px 8px;" data-action="settings-folder-toggle" data-id="${fid}" data-stop-propagation="1">${f.enabled === false ? '启用' : '停用'}</button>
-                        <button type="button" class="account-btn btn-muted-soft" style="padding:4px 8px;" data-action="settings-folder-copy-path" data-id="${fid}" data-stop-propagation="1">复制路径</button>
-                        <button type="button" class="account-btn account-btn-del" style="padding:4px 8px;" data-action="settings-folder-del" data-id="${fid}" data-stop-propagation="1">删配置</button>
-                        <button type="button" class="account-btn btn-danger-soft" style="padding:4px 8px;" data-action="settings-folder-del-target" data-id="${fid}" data-stop-propagation="1">删目录</button>
-                    </div>
+                <div style="display:flex;justify-content:space-between;background:#222;padding:8px;border-radius:6px;margin-bottom:5px;font-size:12px;align-items:center;" data-action="settings-folder-edit" data-index="${i}">
+                    <div style="display:flex;align-items:center;gap:5px;"><span>${escapeHtml(f.icon || '')}</span><span style="font-weight:bold;">${escapeHtml(f.name || '')}</span>${f.type==='group'?'<span style="font-size:9px;background:#333;padding:2px 4px;">组</span>':''}</div>
+                    <svg class="icon" style="color:#666;padding:5px;font-size:12px;cursor:pointer;" data-action="settings-folder-del" data-index="${i}" data-stop-propagation="1"><use href="#i-xmark"/></svg>
                 </div>`;
             }).join('') || (q ? '<div style="text-align:center;color:#777;padding:8px 0;font-size:12px;">无匹配槽位</div>' : '');
             const sourceSelect = document.getElementById('quickFolderSource');
@@ -1676,108 +1469,9 @@
         }
 
         // --- Standard Config ---
-        async function fetchFolders() {
-            try {
-                const res = await fetch('/v1/folders');
-                const body = await res.json();
-                state.quickFolders = Array.isArray(body) ? body : [];
-                renderSettings();
-            } catch(e) {
-                showToast('读取收纳配置失败');
-            }
-        }
-        async function toggleQuickFolderById(id) {
-            const item = state.quickFolders.find(f => f.id === id);
-            if (!item) return showToast('配置不存在');
-            const nextEnabled = item.enabled === false;
-            const payload = { ...item, enabled: nextEnabled };
-            try {
-                const res = await fetch(`/v1/folders/${encodeURIComponent(id)}`, {
-                    method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)
-                });
-                const { ok, body } = await parseActionResponse(res);
-                if (!ok) return showToast(getActionMessage(body, '更新失败'));
-                await fetchFolders();
-                showToast(nextEnabled ? '已启用收纳项' : '已停用收纳项');
-            } catch (e) {
-                showToast('网络错误');
-            }
-        }
-
-        async function copyQuickFolderPathById(id) {
-            const item = state.quickFolders.find(f => f.id === id);
-            if (!item) return showToast('配置不存在');
-            const path = item.path || '';
-            if (!path) return showToast('路径为空');
-            try {
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                    await navigator.clipboard.writeText(path);
-                    return showToast('路径已复制');
-                }
-            } catch (_) {}
-            try {
-                const ta = document.createElement('textarea');
-                ta.value = path;
-                ta.setAttribute('readonly', 'readonly');
-                ta.style.position = 'fixed';
-                ta.style.opacity = '0';
-                ta.style.pointerEvents = 'none';
-                document.body.appendChild(ta);
-                ta.focus();
-                ta.select();
-                const ok = document.execCommand('copy');
-                document.body.removeChild(ta);
-                if (ok) showToast('路径已复制');
-                else showToast('复制失败，请手动复制');
-            } catch (e) {
-                showToast('复制失败，请手动复制');
-            }
-        }
-
-        async function delQuickFolderById(id) {
-            const item = state.quickFolders.find(f => f.id === id);
-            if (!item) return showToast('配置不存在');
-            if(!confirm(`删除收纳配置「${item.name}」?
-仅删除配置，不删除真实目录。`)) return;
-            try {
-                const res = await fetch(`/v1/folders/${encodeURIComponent(id)}`, { method:'DELETE' });
-                const { ok, body } = await parseActionResponse(res);
-                if (!ok) return showToast(getActionMessage(body, '删除配置失败'));
-                await fetchFolders();
-                if (state.editFolderId === id) cancelEditFolder();
-                showToast('配置已删除');
-            } catch (e) {
-                showToast('网络错误');
-            }
-        }
-        async function delQuickFolderTargetById(id) {
-            const item = state.quickFolders.find(f => f.id === id);
-            if (!item) return showToast('配置不存在');
-            const source = item.source || state.currentSource || '';
-            if (!source) return showToast('缺少来源，无法删除真实目录');
-            try {
-                const check = await fetch(`/v1/browse?source=${encodeURIComponent(source)}&path=${encodeURIComponent(item.path)}&unfiltered=true`);
-                if (check.ok) {
-                    const children = await check.json();
-                    if (Array.isArray(children) && children.length > 0) {
-                        return showToast(`目录非空（${children.length}项），请先清空后再删目录`);
-                    }
-                }
-            } catch (_) {}
-            if(!confirm(`删除真实目录「${item.path}」?
-此操作会影响实际存储，且仅允许删除空目录。`)) return;
-            try {
-                const res = await fetch('/v1/folders-target', {
-                    method:'DELETE', headers:{'Content-Type':'application/json'},
-                    body: JSON.stringify({ source, path: item.path })
-                });
-                const { ok, body } = await parseActionResponse(res);
-                if (!ok) return showToast(getActionMessage(body, '删除真实目录失败'));
-                showToast('真实目录已删除');
-            } catch (e) {
-                showToast('网络错误');
-            }
-        }
+        async function fetchFolders() { try { const res = await fetch('/v1/folders'); state.quickFolders = await res.json(); renderSettings(); } catch(e){} }
+        async function saveFoldersToServer() { await fetch('/v1/folders', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(state.quickFolders)}); renderSettings(); }
+        function delQuickFolder(idx) { if(!confirm("删除槽位?")) return; state.quickFolders.splice(idx, 1); saveFoldersToServer(); }
         async function fetchSources() { try { const res = await fetch('/v1/sources'); if(!res.ok) throw new Error(); state.sources = await res.json(); } catch(e) { console.warn('fetchSources failed:', e); } }
         async function delAccount(name) {
             if (!name) return showToast('账号名为空');
@@ -1786,7 +1480,7 @@
                 const res = await fetch(`/v1/sources/${encodeURIComponent(name)}`, {method: 'DELETE'});
                 const body = await res.json().catch(() => ({}));
                 if (!res.ok || body.status !== 'success') {
-                    return showToast(getActionMessage(body, '删除失败'));
+                    return showToast(body.detail || body.message || '删除失败');
                 }
                 await fetchSources();
                 renderSettings();
@@ -1806,7 +1500,7 @@
                 const res = await fetch('/v1/reload', {method: 'POST'});
                 const body = await res.json().catch(() => ({}));
                 if(!res.ok || body.status !== 'success') {
-                    showToast(getActionMessage(body, '刷新失败'));
+                    showToast(body.detail || body.message || '刷新失败');
                 } else {
                     const queueSize = Number.isFinite(body.queue_size) ? body.queue_size : 0;
                     showToast(`已加入刷新队列 (队列:${queueSize})`);
@@ -1835,16 +1529,12 @@
                 });
                 const { ok, body } = await parseActionResponse(res);
                 if(ok) {
-                    if (body.status === "pending") {
-                        showToast("已提交，稍后刷新确认");
-                    } else {
-                        showToast("已删除");
-                        state.videoStack.splice(state.currentIndex, 1);
-                        state.currentIndex--;
-                        loadNextVideo(true);
-                    }
+                    showToast("已删除");
+                    state.videoStack.splice(state.currentIndex, 1);
+                    state.currentIndex--;
+                    loadNextVideo(true);
                 } else {
-                    showToast(`删除失败: ${getActionMessage(body, '未知错误')}`);
+                    showToast(`删除失败: ${body.detail || body.message || '未知错误'}`);
                 }
             } catch(e) {
                 showToast("网络错误");
@@ -1878,6 +1568,7 @@
             let dragging = false;
             let activePointerId = null;
             let pendingProgress = null;
+            let pausedByDrag = false;
             let lastWarnAt = 0;
 
             const warnOnce = (message) => {
@@ -1919,78 +1610,13 @@
                     pendingProgress = null;
                     return;
                 }
-                if (state.mediaState.seekInFlight) {
-                    pendingProgress = null;
-                    return;
-                }
-                const video = state.dp && state.dp.video;
-                if (!video) {
-                    pendingProgress = null;
-                    return;
-                }
                 const duration = state.dp.video.duration;
-                const maxSeek = Math.max(0, duration - 0.05);
-                const target = Math.min(maxSeek, Math.max(0, duration * pendingProgress));
-                const resumeAfterSeek = !video.paused;
+                const target = duration * pendingProgress;
                 pendingProgress = null;
-
-                state.mediaState.seekInFlight = true;
-                state.mediaState.lastSeekAt = Date.now();
-                setLoading(true);
-
-                let settled = false;
-                let seekTimer = null;
-                let seekedHandler = null;
-                let playingHandler = null;
-                let errorHandler = null;
-                let canplayHandler = null;
-
-                const clearSeekHandlers = () => {
-                    if (seekTimer) clearTimeout(seekTimer);
-                    if (seekedHandler) video.removeEventListener('seeked', seekedHandler);
-                    if (playingHandler) video.removeEventListener('playing', playingHandler);
-                    if (errorHandler) video.removeEventListener('error', errorHandler);
-                    if (canplayHandler) video.removeEventListener('canplay', canplayHandler);
-                    seekTimer = null;
-                    seekedHandler = null;
-                    playingHandler = null;
-                    errorHandler = null;
-                    canplayHandler = null;
-                };
-
-                const finishSeek = (ok) => {
-                    if (settled) return;
-                    settled = true;
-                    clearSeekHandlers();
-                    state.mediaState.seekInFlight = false;
-                    setLoading(false);
-                    if (!ok) {
-                        warnOnce('定位较慢，已自动尝试恢复');
-                        if (state.mediaState.hlsInstance) {
-                            try { state.mediaState.hlsInstance.startLoad(target); } catch (_) {}
-                            try { state.mediaState.hlsInstance.recoverMediaError(); } catch (_) {}
-                        }
-                    }
-                    if (resumeAfterSeek) Promise.resolve(video.play()).catch(() => {});
-                };
-
-                seekedHandler = () => finishSeek(true);
-                playingHandler = () => finishSeek(true);
-                canplayHandler = () => {
-                    if (Math.abs(video.currentTime - target) <= 1) finishSeek(true);
-                };
-                errorHandler = () => finishSeek(false);
-
-                video.addEventListener('seeked', seekedHandler, { once: true });
-                video.addEventListener('playing', playingHandler, { once: true });
-                video.addEventListener('canplay', canplayHandler, { once: true });
-                video.addEventListener('error', errorHandler, { once: true });
-
-                seekTimer = setTimeout(() => finishSeek(false), 2600);
-                try {
-                    video.currentTime = target;
-                } catch (_) {
-                    finishSeek(false);
+                state.dp.video.currentTime = target;
+                if (typeof state.dp.seek === 'function') state.dp.seek(target);
+                if ('currentTime' in state.dp) {
+                    try { state.dp.currentTime = target; } catch (_) {}
                 }
             };
 
@@ -1998,6 +1624,10 @@
                 if (!canSeekNow()) return;
                 dragging = true;
                 activePointerId = pointerId;
+                pausedByDrag = !!(state.dp && state.dp.video && !state.dp.video.paused);
+                if (pausedByDrag && typeof state.dp.pause === 'function') {
+                    state.dp.pause();
+                }
                 previewAt(clientX);
             };
 
@@ -2007,6 +1637,10 @@
                 dragging = false;
                 activePointerId = null;
                 commitPendingSeek();
+                if (pausedByDrag && state.dp && typeof state.dp.play === 'function') {
+                    Promise.resolve(state.dp.play()).catch(() => {});
+                }
+                pausedByDrag = false;
             };
 
             bar.addEventListener('click', (e) => {
@@ -2080,100 +1714,12 @@
             }, { passive: true });
         }
         function renderSourceTabs() { document.getElementById('sourceTabs').innerHTML = state.sources.map(s => `<div class="source-chip ${s.name === state.currentSource ? 'active' : ''}" data-action="change-source" data-source="${encodeURIComponent(s.name || '')}">${escapeHtml(s.name || '')}</div>`).join(''); initA11yButtons(); }
-        function changeSource(name) { state.currentSource = name; const src = state.sources.find(s => s.name === name); const startPath = (src && src.selected_paths && src.selected_paths.length) ? src.selected_paths[0] : (src && src.root_path ? src.root_path : '/'); state.currentPath = startPath; renderSourceTabs(); updateGoUpButtonState(startPath); browseFile(name, startPath); }
+        function changeSource(name) { state.currentSource = name; const src = state.sources.find(s => s.name === name); const startPath = (src && src.selected_paths && src.selected_paths.length) ? src.selected_paths[0] : (src && src.root_path ? src.root_path : '/'); state.currentPath = startPath; renderSourceTabs(); browseFile(name, startPath); }
         function onFileClick(path, isDir) { if(isDir) { state.currentPath = path; browseFile(state.currentSource, path); } else { if (state.abortController.browseFile) state.abortController.browseFile.abort(); if (state.abortController.loadNextVideo) state.abortController.loadNextVideo.abort(); resetPlayerUI(); const media = { url: `/v1/stream?source=${state.currentSource}&path=${encodeURIComponent(path)}`, transcode_url: `/v1/transcode?source=${state.currentSource}&path=${encodeURIComponent(path)}`, download_url: `/v1/download?source=${state.currentSource}&path=${encodeURIComponent(path)}`, source: state.currentSource, raw_path: path, type: 'video' }; state.videoStack.splice(state.currentIndex + 1, 0, media); state.currentIndex++; state.playMode = 'random'; syncMediaState(); switchTab('play'); renderPlayer(media); } }
-        function goUpDir() { const cur = normalizePath(state.currentPath || '/'); if(cur === '/') { updateGoUpButtonState('/'); return; } const parts = cur.split('/').filter(Boolean); parts.pop(); const parent = parts.length ? '/' + parts.join('/') : '/'; state.currentPath = parent; updateGoUpButtonState(parent); browseFile(state.currentSource, parent); }
+        function goUpDir() { if(state.currentPath === '/') return; const p = state.currentPath.split('/'); p.pop(); state.currentPath = p.length === 1 ? '/' : p.join('/'); browseFile(state.currentSource, state.currentPath); }
         function playFolder() { if(!state.currentFileList) return; const videos = state.currentFileList.filter(f => !f.is_dir).map(f => ({ url: `/v1/stream?source=${state.currentSource}&path=${encodeURIComponent(f.path)}`, transcode_url: `/v1/transcode?source=${state.currentSource}&path=${encodeURIComponent(f.path)}`, download_url: `/v1/download?source=${state.currentSource}&path=${encodeURIComponent(f.path)}`, source: state.currentSource, raw_path: f.path, type: 'video', name: f.name })); if(videos.length === 0) return showToast("无视频"); resetPlayerUI(); state.playMode = 'folder'; state.videoStack = videos; state.currentIndex = 0; switchTab('play'); renderPlayer(videos[0]); showToast(`播放 ${videos.length} 个视频`); }
         let _toastTimer = null;
         function showToast(msg, type="info") { const t = document.getElementById('toast'); t.textContent = msg; t.style.opacity = 1; if(_toastTimer) clearTimeout(_toastTimer); _toastTimer = setTimeout(() => { t.style.opacity = 0; _toastTimer = null; }, 2000); }
     </script>
-
-    <script>
-    (function(){
-      const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-      const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
-      const isSafari = () => /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-      let deferredInstallPrompt = null;
-
-      function banner(id, text, actions) {
-        if (document.getElementById(id)) return document.getElementById(id);
-        const el = document.createElement('div');
-        el.id = id;
-        el.style.cssText = 'position:fixed;left:10px;right:10px;top:10px;z-index:5000;background:#111;border:1px solid #333;color:#fff;border-radius:10px;padding:10px;font-size:12px;line-height:1.4;';
-        el.innerHTML = `<div style="margin-bottom:8px;">${text}</div><div style="display:flex;gap:8px;justify-content:flex-end;">${actions||''}</div>`;
-        document.body.appendChild(el);
-        return el;
-      }
-
-      function showIOSGuide() {
-        if (!isIOS() || !isSafari() || isStandalone()) return;
-        const key = 'pwa_ios_guide_dismissed_v1';
-        if (localStorage.getItem(key) === '1') return;
-        const el = banner('iosInstallGuide','在 iPhone/iPad 上安装：点击浏览器分享按钮，再选择“添加到主屏幕”。', '<button id="iosGuideClose" style="background:#333;color:#fff;border:1px solid #555;border-radius:6px;padding:6px 10px;">知道了</button>');
-        const btn = document.getElementById('iosGuideClose');
-        if (btn) btn.onclick = () => { localStorage.setItem(key,'1'); el.remove(); };
-      }
-
-      function showInstallCta() {
-        if (!deferredInstallPrompt || isStandalone()) return;
-        const el = banner('installBanner', '可安装 Tikplayer 到主屏幕，获得更好的全屏与启动体验。', '<button id="installNow" style="background:#fe2c55;color:#fff;border:0;border-radius:6px;padding:6px 10px;">安装</button><button id="installLater" style="background:#333;color:#fff;border:1px solid #555;border-radius:6px;padding:6px 10px;">稍后</button>');
-        const installNow = document.getElementById('installNow');
-        const installLater = document.getElementById('installLater');
-        if (installNow) {
-          installNow.onclick = async () => {
-            el.remove();
-            try {
-              deferredInstallPrompt.prompt();
-              await deferredInstallPrompt.userChoice;
-            } catch (_) {}
-            deferredInstallPrompt = null;
-          };
-        }
-        if (installLater) installLater.onclick = () => el.remove();
-      }
-
-      function registerSW() {
-        if (!('serviceWorker' in navigator)) return;
-        window.addEventListener('load', async () => {
-          try {
-            const reg = await navigator.serviceWorker.register('/sw.js');
-            reg.addEventListener('updatefound', () => {
-              const nw = reg.installing;
-              if (!nw) return;
-              nw.addEventListener('statechange', () => {
-                if (nw.state === 'installed' && navigator.serviceWorker.controller) {
-                  const el = banner('updateBanner', '发现新版本，点击刷新后生效。', '<button id="refreshNow" style="background:#fe2c55;color:#fff;border:0;border-radius:6px;padding:6px 10px;">刷新</button>');
-                  const btn = document.getElementById('refreshNow');
-                  if (btn) btn.onclick = () => window.location.reload();
-                }
-              });
-            });
-          } catch (_) {}
-        });
-      }
-
-      window.addEventListener('beforeinstallprompt', (e) => {
-        e.preventDefault();
-        deferredInstallPrompt = e;
-        showInstallCta();
-      });
-
-      window.addEventListener('appinstalled', () => {
-        const el = document.getElementById('installBanner');
-        if (el) el.remove();
-      });
-
-      window.addEventListener('offline', () => {
-        if (typeof showToast === 'function') showToast('网络已断开，媒体播放需联网');
-      });
-      window.addEventListener('online', () => {
-        if (typeof showToast === 'function') showToast('网络已恢复');
-      });
-
-      registerSW();
-      showIOSGuide();
-    })();
-    </script>
-
 </body>
 </html>

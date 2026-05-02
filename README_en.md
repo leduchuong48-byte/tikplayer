@@ -1,97 +1,91 @@
-# Tikplayer
+<h1 align="center">Tikplayer</h1>
 
-![Tikplayer UI](https://raw.githubusercontent.com/leduchuong48-byte/tikplayer/main/images/ui/desktop.png)
+<p align="center">
+<a href="https://github.com/leduchuong48-byte/tikplayer/releases"><img alt="Release" src="https://img.shields.io/github/v/release/leduchuong48-byte/tikplayer?display_name=tag"></a>
+<a href="https://hub.docker.com/r/leduchuong/tikplayer"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/leduchuong/tikplayer?logo=docker"></a>
+<a href="https://github.com/leduchuong48-byte/tikplayer/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/leduchuong48-byte/tikplayer"></a>
+<a href="https://github.com/leduchuong48-byte/tikplayer/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/leduchuong48-byte/tikplayer"></a>
+</p>
 
-[![Docker Pulls](https://img.shields.io/docker/pulls/leduchuong/tikplayer?logo=docker&label=Docker%20Pulls)](https://hub.docker.com/r/leduchuong/tikplayer)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/leduchuong48-byte/tikplayer/blob/main/LICENSE)
-[![Build: Passing](https://img.shields.io/badge/Build-Passing-brightgreen.svg)](#)
-[![Platform: ARM64/AMD64](https://img.shields.io/badge/Platform-ARM64%2FAMD64-blue.svg)](#)
+<h3 align="center">
+  <a href="README.md">中文</a><span> · </span>
+  <a href="https://github.com/leduchuong48-byte/tikplayer/issues">Report Bug</a>
+  <span> · </span>
+  <a href="https://github.com/leduchuong48-byte/tikplayer/discussions">Discussions</a>
+</h3>
 
-[中文](https://github.com/leduchuong48-byte/tikplayer/blob/main/README.md)
+## Overview
 
-> Better alternative to web-file-player for E-ink devices.
+Tikplayer is a lightweight self-hosted media browsing and playback web app for NAS / HomeLab environments, with multi-source browsing, playback controls, and quick organize actions.
 
-Tikplayer is a lightweight NAS/HomeLab media player service focused on simple deployment, hardware-friendly playback, and easy remote access.
+## Interface
 
-## Release Notes
+### Web UI (2.4)
 
-- `v2.3`: Fixed occasional freeze after timeline dragging by introducing a seek state loop with timeout-based recovery.
-- `v2.3`: Added soft recovery on `waiting/stalled` to self-heal playback during network jitter.
-- `v2.3`: Tuned HLS buffering parameters (`nudge/maxBufferHole/watchdog`) for more stable mobile playback.
-- `v2.3`: Fixed URL encoding for non-ASCII source names to prevent request failures.
-- `v2.3`: Upgraded `hls.js` to `1.6.15` and unified project/image/UI version to `2.3`.
-- `v2.2`: `reload` moved from a boolean lock to a queue with progress percent and stage states, with queue status API added.
-- `v2.2`: Added per-source `random_enabled` to support browse-only sources, plus backend path-level dedup in random pool.
-- `v2.2`: On `move/delete`, random-pool stale entries are actively pruned by backend + path scope to improve collection consistency.
-- `v2.2`: Account management now uses explicit Edit/Delete actions with clearer failure feedback on delete.
-- `v2.2`: Mobile UI updated for Safari/Chrome with a single sticky top bar, dynamic viewport, and safe-area adaptation.
-- `v2.2`: Frontend cache strategy fixed: `/` now returns `no-store` to avoid stale page assets.
+> Screenshots below are captured from an isolated demo instance.
 
-## Why this tool?
+![Home](https://raw.githubusercontent.com/leduchuong48-byte/tikplayer/main/docs/ui/home-v24.png)
+![Files](https://raw.githubusercontent.com/leduchuong48-byte/tikplayer/main/docs/ui/files-v24.png)
+![Profile](https://raw.githubusercontent.com/leduchuong48-byte/tikplayer/main/docs/ui/profile-v24.png)
 
-Many self-hosted users need a quick media player stack that just works, but deployment and compatibility often become the bottleneck. TikPlayer keeps the workflow copy-paste friendly and reproducible.
+## Support Matrix
 
-## What the Project Does (Features)
+| Category | Support |
+|---|---|
+| Runtime | FastAPI + Web UI |
+| Core Use Cases | playback, browsing, quick organize, basic file actions |
+| Deployment | Docker / Docker Compose / N97 |
 
-- Web UI playback and basic media management
-- Docker-first deployment for NAS/HomeLab
-- Multi-arch support for ARM64 and AMD64
-
-✅ Perfect for Raspberry Pi & Oracle Cloud Free Tier (ARM)
-
-## UI Preview
-
-![Desktop UI](https://raw.githubusercontent.com/leduchuong48-byte/tikplayer/main/images/ui/desktop.png)
-![Mobile UI](https://raw.githubusercontent.com/leduchuong48-byte/tikplayer/main/images/ui/mobile.png)
-
-## ⚡️ Quick Start (Run in 3 seconds)
+## Installation
 
 ```bash
-docker run -d \
-  --name tikplayer \
-  --restart unless-stopped \
-  -p 1015:8000 \
-  -v ./image:/app/image \
-  -v ./data:/app/data \
-  docker.io/leduchuong/tikplayer:2.3
+git clone https://github.com/leduchuong48-byte/tikplayer.git
+cd tikplayer
+cp .env.example .env
 ```
 
-## For Portainer/Synology Users
+## Docker
 
-Copy this into Portainer stacks and hit Deploy. Done.
-
-## Docker Compose
+```bash
+docker pull leduchuong/tikplayer:latest
+```
 
 ```yaml
 services:
   tikplayer:
-    image: docker.io/leduchuong/tikplayer:2.3
+    image: leduchuong/tikplayer:latest
     container_name: tikplayer
     restart: unless-stopped
     ports:
       - "1015:8000"
+    env_file:
+      - .env
     volumes:
       - ./image:/app/image
       - ./data:/app/data
-    shm_size: "2gb"
+      - ./index.html:/app/index.html:ro
 ```
 
-## GitHub Topics (pick at least 5)
+## Configuration
 
-`#nas` `#homelab` `#selfhosted` `#synology` `#unraid` `#eink` `#automation`
+- Core files: `sources.json`, `folders.json`
+- Runtime env: `.env`
+- Production recommendation: enable auth and SSRF host restrictions.
 
-## Where to Get Help
+## Upgrade Notes (2.4 vs 2.3)
 
-- Issues: `https://github.com/leduchuong48-byte/tikplayer/issues`
+- Version bump aligned to `2.4` across Dockerfile and UI labels.
+- UI navigation and directory back action improved.
+- Folder config model enhanced with ID/status/sort/note/last-used fields.
+- Added `sw.js` and `offline.html` routes for better PWA/offline behavior.
+- Added folder item CRUD and target-folder delete API flow for finer management.
+- Upgrade from `2.3` to `2.4` is recommended.
 
-## Maintainer
+## Support & Contribution
 
-- `@leduchuong48-byte`
+- Issues: https://github.com/leduchuong48-byte/tikplayer/issues
+- Discussions: https://github.com/leduchuong48-byte/tikplayer/discussions
 
 ## Disclaimer
 
-By using this project, you acknowledge and agree to the [Disclaimer](https://github.com/leduchuong48-byte/tikplayer/blob/main/DISCLAIMER.md).
-
-## License
-
-MIT, see [LICENSE](https://github.com/leduchuong48-byte/tikplayer/blob/main/LICENSE).
+By using this project, you agree to [DISCLAIMER.md](DISCLAIMER.md).

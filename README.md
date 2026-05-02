@@ -1,97 +1,91 @@
-# Tikplayer
+<h1 align="center">Tikplayer</h1>
 
-![Tikplayer UI](https://raw.githubusercontent.com/leduchuong48-byte/tikplayer/main/images/ui/desktop.png)
+<p align="center">
+<a href="https://github.com/leduchuong48-byte/tikplayer/releases"><img alt="Release" src="https://img.shields.io/github/v/release/leduchuong48-byte/tikplayer?display_name=tag"></a>
+<a href="https://hub.docker.com/r/leduchuong/tikplayer"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/leduchuong/tikplayer?logo=docker"></a>
+<a href="https://github.com/leduchuong48-byte/tikplayer/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/leduchuong48-byte/tikplayer"></a>
+<a href="https://github.com/leduchuong48-byte/tikplayer/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/leduchuong48-byte/tikplayer"></a>
+</p>
 
-[![Docker Pulls](https://img.shields.io/docker/pulls/leduchuong/tikplayer?logo=docker&label=Docker%20Pulls)](https://hub.docker.com/r/leduchuong/tikplayer)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/leduchuong48-byte/tikplayer/blob/main/LICENSE)
-[![Build: Passing](https://img.shields.io/badge/Build-Passing-brightgreen.svg)](#)
-[![Platform: ARM64/AMD64](https://img.shields.io/badge/Platform-ARM64%2FAMD64-blue.svg)](#)
+<h3 align="center">
+  <a href="README_en.md">English</a><span> · </span>
+  <a href="https://github.com/leduchuong48-byte/tikplayer/issues">报告问题</a>
+  <span> · </span>
+  <a href="https://github.com/leduchuong48-byte/tikplayer/discussions">讨论</a>
+</h3>
 
-[English](https://github.com/leduchuong48-byte/tikplayer/blob/main/README_en.md)
+## 概述
 
-> Better alternative to web-file-player for E-ink devices.
+Tikplayer 是一个面向 NAS / HomeLab 场景的轻量媒体播放与目录聚合 Web 应用，支持多源目录浏览、播放控制、文件操作和快速收纳。
 
-Tikplayer 是一个面向 NAS/HomeLab 的轻量级视频在线播放与管理服务，重点解决“多终端访问、硬解兼容、部署复杂度高”的问题。
+## 界面
 
-## 版本更新
+### Web 管理台（2.4）
 
-- `v2.3`：修复进度条拖动后偶发卡死，`seek` 改为状态闭环并增加超时自动恢复。
-- `v2.3`：新增 `waiting/stalled` 软恢复机制，播放中网络抖动时自动自愈。
-- `v2.3`：优化 HLS 缓冲参数（`nudge/maxBufferHole/watchdog`），降低移动端卡顿率。
-- `v2.3`：修复中文源名 URL 编码问题，避免部分资源请求异常。
-- `v2.3`：升级 `hls.js` 到 `1.6.15`，并统一项目/镜像/UI 版本为 `2.3`。
-- `v2.2`：`reload` 从布尔锁升级为“队列 + 进度百分比 + 阶段状态”，新增队列状态接口，避免“显示成功但实际未完成”。
-- `v2.2`：新增账号级 `random_enabled`，支持源“仅浏览不参与随机”；并在后端对随机池按路径去重，减少重叠源重复命中。
-- `v2.2`：`move/delete` 后按“同后端 + 路径”主动清理随机池脏条目，降低收纳后仍被随机命中的概率。
-- `v2.2`：账号管理改为明确的编辑/删除按钮，删除失败反馈更直接。
-- `v2.2`：移动端按 Safari/Chrome 规范重构为单一 sticky 顶栏，适配动态视口与安全区，修复文件页堆叠异常。
-- `v2.2`：前端缓存策略修复，`/` 返回 `no-store`，避免浏览器（含无痕）命中旧页面。
+> 以下截图来自隔离演示实例，未使用私人账号上下文。
 
-## Why this tool?（为什么要做它）
+![Home](https://raw.githubusercontent.com/leduchuong48-byte/tikplayer/main/docs/ui/home-v24.png)
+![Files](https://raw.githubusercontent.com/leduchuong48-byte/tikplayer/main/docs/ui/files-v24.png)
+![Profile](https://raw.githubusercontent.com/leduchuong48-byte/tikplayer/main/docs/ui/profile-v24.png)
 
-很多家庭服务器用户只想快速搭一个能跑、好看、可远程访问的视频播放器，但经常被繁琐部署、格式兼容和设备适配问题卡住。TikPlayer 把这些常见问题收敛到一个可复制的 Docker 部署流程里，减少试错成本。
+## 支持
 
-## 项目做什么（功能概览）
+| 类别 | 支持 |
+|---|---|
+| 运行方式 | FastAPI + Web UI |
+| 主要场景 | 媒体播放、目录浏览、快速收纳、基础文件操作 |
+| 部署 | Docker / Docker Compose / N97 |
 
-- Web UI 播放与基础媒体管理
-- 面向 Docker/NAS 的快速部署
-- ARM64/AMD64 双架构支持
-  
-✅ Perfect for Raspberry Pi & Oracle Cloud Free Tier (ARM)
-
-## UI 界面展示
-
-![Desktop UI](https://raw.githubusercontent.com/leduchuong48-byte/tikplayer/main/images/ui/desktop.png)
-![Mobile UI](https://raw.githubusercontent.com/leduchuong48-byte/tikplayer/main/images/ui/mobile.png)
-
-## ⚡️ Quick Start (Run in 3 seconds)
+## 安装
 
 ```bash
-docker run -d \
-  --name tikplayer \
-  --restart unless-stopped \
-  -p 1015:8000 \
-  -v ./image:/app/image \
-  -v ./data:/app/data \
-  docker.io/leduchuong/tikplayer:2.3
+git clone https://github.com/leduchuong48-byte/tikplayer.git
+cd tikplayer
+cp .env.example .env
 ```
 
-## For Portainer/Synology Users
+## Docker 容器
 
-Copy this into Portainer stacks and hit Deploy. Done.
-
-## Docker Compose
+```bash
+docker pull leduchuong/tikplayer:latest
+```
 
 ```yaml
 services:
   tikplayer:
-    image: docker.io/leduchuong/tikplayer:2.3
+    image: leduchuong/tikplayer:latest
     container_name: tikplayer
     restart: unless-stopped
     ports:
       - "1015:8000"
+    env_file:
+      - .env
     volumes:
       - ./image:/app/image
       - ./data:/app/data
-    shm_size: "2gb"
+      - ./index.html:/app/index.html:ro
 ```
 
-## GitHub Topics（建议至少 5 个）
+## 配置
 
-`#nas` `#homelab` `#selfhosted` `#synology` `#unraid` `#eink` `#automation`
+- 核心配置：`sources.json`、`folders.json`
+- 运行环境：`.env`
+- 建议生产环境启用鉴权并配置白名单。
 
-## 在哪里获得帮助
+## 2.4 升级说明（对比 2.3）
 
-- Issues: `https://github.com/leduchuong48-byte/tikplayer/issues`
+- 升级版本标识为 `2.4`，统一 Dockerfile / UI 标识。
+- Web UI 交互增强：底部导航流程更清晰，目录返回按钮更易用。
+- 文件夹配置模型增强：新增唯一 ID、启用状态、排序、备注、使用时间等字段，管理更稳定。
+- 新增服务能力：`sw.js` 与 `offline.html` 路由支持，PWA / 离线可用性增强。
+- API 侧新增文件夹项增删改与目标目录删除流程，支持更细粒度目录维护。
+- 建议现有 `2.3` 用户升级到 `2.4`。
 
-## 维护者与贡献者
+## 支持与贡献
 
-- Maintainer: `@leduchuong48-byte`
+- Issues: https://github.com/leduchuong48-byte/tikplayer/issues
+- Discussions: https://github.com/leduchuong48-byte/tikplayer/discussions
 
 ## 免责声明
 
-使用本项目即表示你已阅读并同意 [免责声明](https://github.com/leduchuong48-byte/tikplayer/blob/main/DISCLAIMER.md)。
-
-## 许可证
-
-MIT，详见 [LICENSE](https://github.com/leduchuong48-byte/tikplayer/blob/main/LICENSE)。
+使用本项目即表示你已阅读并同意 [DISCLAIMER.md](DISCLAIMER.md)。

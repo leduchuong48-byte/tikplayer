@@ -1,13 +1,23 @@
 [
   {
-    "name": "demo_source",
-    "url": "http://your-alist-host:5244",
-    "username": "your_username",
-    "password": "your_password",
-    "root_path": "/",
-    "selected_paths": [
-      "/"
-    ],
-    "random_enabled": true
+    "name": "tgdownloader",
+    "url": "http://REDACTED_HOST",
+    "username": "REDACTED_USER",
+    "password": "Vincento0o0o",
+    "root_path": "Ldisk/散片"
+  },
+  {
+    "name": "downloads",
+    "url": "http://REDACTED_HOST",
+    "username": "REDACTED_USER",
+    "password": "REDACTED_PASS",
+    "root_path": "/Linux/downloads"
+  },
+  {
+    "name": "素材",
+    "url": "http://REDACTED_HOST",
+    "username": "REDACTED_USER",
+    "password": "REDACTED_PASS",
+    "root_path": "/REDACTED/PATH/x"
   }
 ]

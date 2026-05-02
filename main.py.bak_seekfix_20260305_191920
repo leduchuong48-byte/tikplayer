@@ -8,9 +8,8 @@ import httpx
 import asyncio
 import urllib.parse
 import subprocess
-import uuid
 from collections import deque
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, HTTPException, Request
@@ -49,24 +48,6 @@ class RenameModel(BaseModel):
 class MkdirModel(BaseModel):
     source: str
     path: str
-
-class FolderConfigModel(BaseModel):
-    id: Optional[str] = None
-    name: str
-    path: str
-    type: str = "direct"
-    icon: str = "📁"
-    source: str = ""
-    enabled: bool = True
-    sort_order: int = 100
-    note: str = ""
-    last_used_at: Optional[str] = ""
-
-
-class FolderTargetDeleteModel(BaseModel):
-    source: str
-    path: str
-
 
 # --- 全局变量 ---
 DATA_DIR = "data"
@@ -135,7 +116,7 @@ MEDIA_EXTENSIONS = {
 }
 NATIVE_FORMATS = ('.mp4', '.webm', '.mov')
 APP_NAME = "Tikplayer"
-APP_VERSION = "2.4"
+APP_VERSION = "2.2"
 
 load_dotenv()
 
@@ -651,61 +632,6 @@ def save_config(sources: List[dict]):
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
         json.dump(sources, f, indent=2, ensure_ascii=False)
-
-
-
-def _normalize_folder_item(raw: dict) -> dict:
-    name = str(raw.get("name") or "").strip()
-    path = _normalize_media_path(str(raw.get("path") or "/"))
-    ftype = str(raw.get("type") or "direct").strip().lower()
-    if ftype not in {"direct", "group"}:
-        ftype = "direct"
-    icon = str(raw.get("icon") or ("📂" if ftype == "group" else "📁"))
-    source = str(raw.get("source") or "")
-    fid = str(raw.get("id") or "").strip() or uuid.uuid4().hex
-    enabled = bool(raw.get("enabled", True))
-    try:
-        sort_order = int(raw.get("sort_order", 100))
-    except Exception:
-        sort_order = 100
-    note = str(raw.get("note") or "")
-    last_used_at = str(raw.get("last_used_at") or "")
-    return {
-        "id": fid,
-        "name": name,
-        "path": path,
-        "type": ftype,
-        "icon": icon,
-        "source": source,
-        "enabled": enabled,
-        "sort_order": sort_order,
-        "note": note,
-        "last_used_at": last_used_at,
-    }
-
-
-def _load_folders_config() -> List[dict]:
-    _migrate_legacy_configs()
-    if not os.path.exists(FOLDER_CONFIG_FILE):
-        return []
-    try:
-        with open(FOLDER_CONFIG_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        if not isinstance(data, list):
-            data = []
-        normalized = [_normalize_folder_item(item if isinstance(item, dict) else {}) for item in data]
-        # rewrite if missing ids/fields migrated
-        _save_folders_config(normalized)
-        return normalized
-    except Exception as e:
-        print(f"Error: {e}")
-        return []
-
-
-def _save_folders_config(folders: List[dict]) -> None:
-    os.makedirs(DATA_DIR, exist_ok=True)
-    with open(FOLDER_CONFIG_FILE, 'w', encoding='utf-8') as f:
-        json.dump(folders, f, indent=2, ensure_ascii=False)
 
 async def deep_scan_alist(client: httpx.AsyncClient, base_url: str, token: str, root_path: str, source_name: str) -> List[dict]:
     results = []
@@ -1223,17 +1149,6 @@ async def get_manifest():
         return FileResponse("manifest.json", media_type="application/manifest+json")
     raise HTTPException(status_code=404)
 
-@app.get("/sw.js")
-async def get_sw():
-    if os.path.exists("sw.js"):
-        return FileResponse("sw.js", media_type="application/javascript")
-    raise HTTPException(status_code=404)
-
-@app.get("/offline.html")
-async def get_offline():
-    if os.path.exists("offline.html"):
-        return FileResponse("offline.html", media_type="text/html")
-    raise HTTPException(status_code=404)
 # --- Source Config API ---
 @app.get("/v1/sources")
 async def get_sources(): return load_config()
@@ -1377,94 +1292,25 @@ async def remove_source(name: str):
 # --- Folder Config API ---
 @app.get("/v1/folders")
 async def get_folders():
-    return _load_folders_config()
-
+    _migrate_legacy_configs()
+    if not os.path.exists(FOLDER_CONFIG_FILE):
+        return []
+    try:
+        with open(FOLDER_CONFIG_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Error: {e}")
+        return []
 
 @app.post("/v1/folders")
 async def save_folders(folders: List[dict]):
     try:
-        normalized = [_normalize_folder_item(item if isinstance(item, dict) else {}) for item in folders]
-        _save_folders_config(normalized)
-        return {"status": "success", "count": len(normalized)}
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(FOLDER_CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(folders, f, indent=2, ensure_ascii=False)
+        return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/v1/folders/item")
-async def create_folder_item(payload: FolderConfigModel):
-    folders = _load_folders_config()
-    item = _normalize_folder_item(payload.dict())
-    folders.append(item)
-    _save_folders_config(folders)
-    return {"status": "success", "item": item}
-
-
-@app.put("/v1/folders/{folder_id}")
-async def update_folder_item(folder_id: str, payload: FolderConfigModel):
-    folders = _load_folders_config()
-    idx = next((i for i, f in enumerate(folders) if f.get("id") == folder_id), -1)
-    if idx < 0:
-        raise HTTPException(status_code=404, detail="folder config not found")
-    body = payload.dict()
-    body["id"] = folder_id
-    folders[idx] = _normalize_folder_item(body)
-    _save_folders_config(folders)
-    return {"status": "success", "item": folders[idx]}
-
-
-@app.delete("/v1/folders/{folder_id}")
-async def delete_folder_item(folder_id: str):
-    folders = _load_folders_config()
-    new_folders = [f for f in folders if f.get("id") != folder_id]
-    if len(new_folders) == len(folders):
-        raise HTTPException(status_code=404, detail="folder config not found")
-    _save_folders_config(new_folders)
-    return {"status": "success", "message": "配置已删除"}
-
-
-@app.delete("/v1/folders-target")
-async def delete_folder_target(payload: FolderTargetDeleteModel):
-    source_name = payload.source
-    dir_path = _normalize_media_path(payload.path)
-    if source_name not in alist_instances:
-        raise HTTPException(status_code=404, detail="source not found")
-
-    instance = alist_instances[source_name]
-    conf = instance.get('conf', {})
-    token = instance['token']
-
-    # 仅允许删除空目录（避免误删）
-    files, err = await AlistHelper.list_files_with_error(
-        shared_http_client or httpx.AsyncClient(),
-        instance['url'].rstrip('/').replace('/dav', ''),
-        token,
-        dir_path,
-    )
-    if err:
-        raise HTTPException(status_code=502, detail=err)
-    if files:
-        raise HTTPException(status_code=400, detail="目录非空，禁止删除")
-
-    base_url = instance['url'].rstrip('/').replace('/dav', '')
-    url = f"{base_url}/api/fs/remove"
-    parent, name = os.path.split(dir_path.rstrip('/'))
-    parent = parent or '/'
-    body = {"dir": parent, "names": [name]}
-
-    client = shared_http_client or httpx.AsyncClient()
-    resp = await client.post(url, headers=AlistHelper.get_headers(token), json=body, timeout=15.0)
-    data = resp.json()
-    if data.get('code') != 200:
-        msg = str(data.get('message') or 'delete dir failed')
-        if 'token' in msg.lower():
-            new_token, _ = await get_source_token(
-                shared_http_client, base_url,
-                str(conf.get('username') or ''), str(conf.get('password') or ''), force_refresh=True)
-            if new_token:
-                instance['token'] = new_token
-        raise HTTPException(status_code=500, detail=msg)
-
-    return {"status": "success", "message": "真实目录已删除"}
 
 # --- Media API ---
 @app.get("/v1/get_video")
@@ -1477,10 +1323,9 @@ async def get_random_video(request: Request):
 
 def build_media_response(request: Request, media: dict):
     encoded_path = urllib.parse.quote(media['path'])
-    encoded_source = urllib.parse.quote(str(media['source']), safe="")
-    stream_url = f"{request.base_url}v1/stream?source={encoded_source}&path={encoded_path}"
-    transcode_url = f"{request.base_url}v1/transcode?source={encoded_source}&path={encoded_path}"
-    download_url = f"{request.base_url}v1/download?source={encoded_source}&path={encoded_path}"
+    stream_url = f"{request.base_url}v1/stream?source={media['source']}&path={encoded_path}"
+    transcode_url = f"{request.base_url}v1/transcode?source={media['source']}&path={encoded_path}"
+    download_url = f"{request.base_url}v1/download?source={media['source']}&path={encoded_path}"
     is_native = media['path'].lower().endswith(NATIVE_FORMATS)
     return {
         "url": stream_url, "transcode_url": transcode_url, "download_url": download_url,
@@ -1625,16 +1470,6 @@ def _is_object_not_found_error(message: Optional[str]) -> bool:
     return "not found" in msg and "token" not in msg
 
 
-def _action_response(operation: str, status: str, message: str, **kwargs):
-    body = {
-        "operation": operation,
-        "status": status,
-        "message": message,
-    }
-    body.update(kwargs)
-    return body
-
-
 async def _probe_media_exists(instance: dict, path: str) -> tuple[Optional[bool], Optional[str]]:
     if shared_http_client is None:
         return None, "HTTP client not initialized"
@@ -1664,12 +1499,11 @@ async def _probe_media_exists(instance: dict, path: str) -> tuple[Optional[bool]
     return bool(details), None
 
 
-async def _verify_delete_committed(instance: dict, file_path: str) -> tuple[bool, str, dict]:
+async def _verify_delete_committed(instance: dict, file_path: str) -> tuple[bool, str]:
     target = _normalize_media_path(file_path)
     # OpenList/后端存储状态可能有短暂延迟，做短轮询避免“假成功”
-    delays = (0.0, 0.5, 1.0, 2.0, 4.0, 8.0)
+    delays = (0.0, 0.5, 1.0, 2.0, 3.0)
     last_err = ""
-    last_exists = None
     for delay in delays:
         if delay > 0:
             await asyncio.sleep(delay)
@@ -1677,18 +1511,17 @@ async def _verify_delete_committed(instance: dict, file_path: str) -> tuple[bool
         if err:
             last_err = err
             continue
-        last_exists = exists
         if exists is False:
-            return True, "", {"target_exists": exists, "last_error": "", "wait_profile": list(delays)}
+            return True, ""
     if last_err:
-        return False, f"删除后复核失败: {last_err}", {"target_exists": last_exists, "last_error": last_err, "wait_profile": list(delays)}
-    return False, f"删除后复核失败: 文件仍存在 {target}", {"target_exists": last_exists, "last_error": "", "wait_profile": list(delays)}
+        return False, f"删除后复核失败: {last_err}"
+    return False, f"删除后复核失败: 文件仍存在 {target}"
 
 
-async def _verify_move_committed(instance: dict, src_path: str, dst_path: str) -> tuple[bool, str, dict]:
+async def _verify_move_committed(instance: dict, src_path: str, dst_path: str) -> tuple[bool, str]:
     src = _normalize_media_path(src_path)
     dst = _normalize_media_path(dst_path)
-    delays = (0.0, 0.5, 1.0, 2.0, 4.0, 8.0)
+    delays = (0.0, 0.5, 1.0, 2.0, 3.0)
     last_err = ""
     last_src_exists: Optional[bool] = None
     last_dst_exists: Optional[bool] = None
@@ -1704,70 +1537,20 @@ async def _verify_move_committed(instance: dict, src_path: str, dst_path: str) -
         last_src_exists = src_exists
         last_dst_exists = dst_exists
         if src_exists is False and dst_exists is True:
-            return True, "", {"src_exists": src_exists, "dst_exists": dst_exists, "last_error": "", "wait_profile": list(delays)}
+            return True, ""
 
     if last_err:
-        return False, f"移动后复核失败: {last_err}", {"src_exists": last_src_exists, "dst_exists": last_dst_exists, "last_error": last_err, "wait_profile": list(delays)}
+        return False, f"移动后复核失败: {last_err}"
     return False, (
         f"移动后复核超时(源是否存在={last_src_exists}, 目标是否存在={last_dst_exists})，"
         "可能仍在后台任务执行中，请稍后刷新确认"
-    ), {"src_exists": last_src_exists, "dst_exists": last_dst_exists, "last_error": "", "wait_profile": list(delays)}
+    )
 
 
 @app.api_route("/v1/stream", methods=["GET", "HEAD"])
 async def stream_video(request: Request, source: str, path: str):
     raw_url = await _resolve_media_raw_url(source, path, evict_on_not_found=(request.method != "HEAD"))
-
-    if shared_http_client is None:
-        raise HTTPException(status_code=503, detail="HTTP client not initialized")
-
-    proxy_headers = {}
-    range_header = request.headers.get("range")
-    if range_header:
-        proxy_headers["Range"] = range_header
-
-    method = request.method.upper()
-
-    try:
-        if method == "HEAD":
-            upstream = await shared_http_client.request(
-                "HEAD",
-                raw_url,
-                headers=proxy_headers,
-                follow_redirects=True,
-                timeout=30.0,
-            )
-
-            forward = {}
-            for k in ["content-type", "content-length", "content-range", "accept-ranges", "etag", "last-modified", "cache-control"]:
-                v = upstream.headers.get(k)
-                if v:
-                    forward[k] = v
-            return Response(status_code=upstream.status_code, headers=forward)
-
-        req = shared_http_client.build_request(
-            "GET",
-            raw_url,
-            headers=proxy_headers,
-        )
-        upstream = await shared_http_client.send(req, stream=True, follow_redirects=True)
-
-        forward = {}
-        for k in ["content-type", "content-length", "content-range", "accept-ranges", "etag", "last-modified", "cache-control"]:
-            v = upstream.headers.get(k)
-            if v:
-                forward[k] = v
-
-        async def iter_upstream():
-            try:
-                async for chunk in upstream.aiter_bytes():
-                    yield chunk
-            finally:
-                await upstream.aclose()
-
-        return StreamingResponse(iter_upstream(), status_code=upstream.status_code, headers=forward)
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"upstream stream proxy error: {e}")
+    return RedirectResponse(url=raw_url, status_code=302)
 
 @app.get("/v1/transcode")
 async def transcode_video(source: str, path: str):
@@ -1803,8 +1586,7 @@ async def delete_video(payload: dict):
     file_path = payload.get("path")
     if not isinstance(file_path, str) or not file_path:
         raise HTTPException(status_code=400)
-    if source_name not in alist_instances:
-        raise HTTPException(status_code=404, detail=_action_response("delete", "failed", "源不存在", failed_reason="source_not_found", path=file_path))
+    if source_name not in alist_instances: raise HTTPException(status_code=404)
     instance = alist_instances[source_name]
     conf = instance.get('conf', {})
     token = instance['token']
@@ -1813,7 +1595,7 @@ async def delete_video(payload: dict):
     if pre_err:
         raise HTTPException(status_code=502, detail=pre_err)
     if pre_exists is False:
-        raise HTTPException(status_code=404, detail=_action_response("delete", "failed", "源文件不存在", failed_reason="source_file_missing", path=file_path))
+        raise HTTPException(status_code=404, detail=f"源文件不存在: {file_path}")
 
     # 带重试的删除（处理 SMB 共享锁 STATUS_SHARING_VIOLATION）
     max_retries = 3
@@ -1838,28 +1620,12 @@ async def delete_video(payload: dict):
         break
 
     if success:
-        verified, verify_msg, verify_state = await _verify_delete_committed(instance, file_path)
+        verified, verify_msg = await _verify_delete_committed(instance, file_path)
+        if not verified:
+            raise HTTPException(status_code=500, detail=verify_msg)
         evicted = _evict_media_by_backend_path(instance['url'].rstrip('/').replace('/dav', ''), file_path)
-        if verified:
-            return _action_response(
-                "delete",
-                "confirmed",
-                "删除成功",
-                path=file_path,
-                evicted=evicted,
-                verify_state=verify_state,
-            )
-        print(f"[delete][pending] path={file_path} verify_state={verify_state}")
-        return _action_response(
-            "delete",
-            "pending",
-            "已提交删除，稍后刷新确认",
-            path=file_path,
-            detail=verify_msg,
-            evicted=evicted,
-            verify_state=verify_state,
-        )
-    raise HTTPException(status_code=500, detail=_action_response("delete", "failed", "删除失败", failed_reason="upstream_delete_failed", path=file_path, detail=msg))
+        return {"status": "success", "evicted": evicted}
+    else: raise HTTPException(status_code=500, detail=msg)
 
 @app.post("/v1/move_video")
 async def move_video(payload: dict):
@@ -1867,8 +1633,7 @@ async def move_video(payload: dict):
     if not all([source_name, src_path, dst_dir]): raise HTTPException(status_code=400)
     src_path = str(src_path)
     dst_dir = str(dst_dir)
-    if source_name not in alist_instances:
-        raise HTTPException(status_code=404, detail=_action_response("delete", "failed", "源不存在", failed_reason="source_not_found", path=file_path))
+    if source_name not in alist_instances: raise HTTPException(status_code=404)
     instance = alist_instances[source_name]
     conf = instance.get('conf', {})
     base_url = instance['url'].rstrip('/').replace('/dav', '')
@@ -1878,9 +1643,9 @@ async def move_video(payload: dict):
 
     src_exists, src_err = await _probe_media_exists(instance, src_path)
     if src_err:
-        raise HTTPException(status_code=502, detail=_action_response("delete", "failed", "源探测失败", failed_reason="probe_failed", path=file_path, detail=src_err))
+        raise HTTPException(status_code=502, detail=src_err)
     if src_exists is False:
-        raise HTTPException(status_code=404, detail=_action_response("move", "failed", "源文件不存在", failed_reason="source_file_missing", src_path=src_path, dst_dir=dst_dir))
+        raise HTTPException(status_code=404, detail=f"源文件不存在: {src_path}")
 
     async def _do_move(token: str) -> dict:
         client = shared_http_client or httpx.AsyncClient()
@@ -1899,37 +1664,21 @@ async def move_video(payload: dict):
             break
         if data.get('code') == 200:
             dst_path = _join_media_path(dst_dir, file_name)
-            verified, verify_msg, verify_state = await _verify_move_committed(instance, src_path, dst_path)
+            verified, verify_msg = await _verify_move_committed(instance, src_path, dst_path)
+            if not verified:
+                raise HTTPException(status_code=500, detail=verify_msg)
             evicted_old = _evict_media_by_backend_path(base_url, src_path)
             in_random_scope = _is_path_in_any_random_scope(dst_path)
             evicted_dst = 0
             if not in_random_scope:
                 evicted_dst = _evict_media_by_backend_path(base_url, dst_path)
-            if verified:
-                return _action_response(
-                    "move",
-                    "confirmed",
-                    "移动成功",
-                    src_path=src_path,
-                    dst_path=dst_path,
-                    in_random_scope=in_random_scope,
-                    evicted_old=evicted_old,
-                    evicted_dst=evicted_dst,
-                    verify_state=verify_state,
-                )
-            print(f"[move][pending] src={src_path} dst={dst_path} verify_state={verify_state}")
-            return _action_response(
-                "move",
-                "pending",
-                "已提交移动，稍后刷新确认",
-                src_path=src_path,
-                dst_path=dst_path,
-                in_random_scope=in_random_scope,
-                detail=verify_msg,
-                evicted_old=evicted_old,
-                evicted_dst=evicted_dst,
-                verify_state=verify_state,
-            )
+            return {
+                "status": "success",
+                "dst_path": dst_path,
+                "in_random_scope": in_random_scope,
+                "evicted_old": evicted_old,
+                "evicted_dst": evicted_dst,
+            }
         last_msg = str(data.get('message', ''))
         # token 过期 → 刷新后重试
         if 'token' in last_msg.lower():
@@ -1946,12 +1695,11 @@ async def move_video(payload: dict):
                 await asyncio.sleep(1 * (2 ** attempt))  # 指数退避: 1s, 2s, 4s
                 continue
         break
-    raise HTTPException(status_code=500, detail=_action_response("move", "failed", "移动失败", failed_reason="upstream_move_failed", src_path=src_path, dst_dir=dst_dir, detail=last_msg))
+    raise HTTPException(status_code=500, detail=last_msg)
 
 @app.post("/v1/fs/rename")
 async def rename_file(payload: RenameModel):
-    if payload.source not in alist_instances:
-        raise HTTPException(status_code=404, detail=_action_response("rename", "failed", "源不存在", failed_reason="source_not_found", src_path=payload.path))
+    if payload.source not in alist_instances: raise HTTPException(status_code=404)
     instance = alist_instances[payload.source]
     base_url = instance['url'].rstrip('/').replace('/dav', '')
     url = f"{base_url}/api/fs/rename"
@@ -1960,41 +1708,14 @@ async def rename_file(payload: RenameModel):
         client = shared_http_client or httpx.AsyncClient()
         resp = await client.post(url, headers=AlistHelper.get_headers(instance['token']), json=body, timeout=15.0)
         data = resp.json()
-        if data.get('code') != 200:
-            raise HTTPException(status_code=500, detail=_action_response("rename", "failed", "重命名失败", failed_reason="upstream_rename_failed", src_path=payload.path, detail=data.get('message')))
-
-        src_path = _normalize_media_path(payload.path)
-        parent_dir = os.path.dirname(src_path) or "/"
-        dst_path = _join_media_path(parent_dir, payload.new_name)
-        verified, verify_msg, verify_state = await _verify_move_committed(instance, src_path, dst_path)
-        if verified:
-            return _action_response(
-                "rename",
-                "confirmed",
-                "重命名成功",
-                src_path=src_path,
-                dst_path=dst_path,
-                verify_state=verify_state,
-            )
-        print(f"[rename][pending] src={src_path} dst={dst_path} verify_state={verify_state}")
-        return _action_response(
-            "rename",
-            "pending",
-            "已提交重命名，稍后刷新确认",
-            src_path=src_path,
-            dst_path=dst_path,
-            detail=verify_msg,
-            verify_state=verify_state,
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=_action_response("rename", "failed", "重命名异常", failed_reason="rename_exception", src_path=payload.path, detail=str(e)))
+        if data.get('code') == 200: return {"status": "success"}
+        else: raise HTTPException(status_code=500, detail=data.get('message'))
+    except HTTPException: raise
+    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/v1/fs/mkdir")
 async def make_directory(payload: MkdirModel):
-    if payload.source not in alist_instances:
-        raise HTTPException(status_code=404)
+    if payload.source not in alist_instances: raise HTTPException(status_code=404)
     instance = alist_instances[payload.source]
     base_url = instance['url'].rstrip('/').replace('/dav', '')
     url = f"{base_url}/api/fs/mkdir"
@@ -2003,14 +1724,10 @@ async def make_directory(payload: MkdirModel):
         client = shared_http_client or httpx.AsyncClient()
         resp = await client.post(url, headers=AlistHelper.get_headers(instance['token']), json=body, timeout=15.0)
         data = resp.json()
-        if data.get('code') == 200:
-            return {"status": "success"}
-        raise HTTPException(status_code=500, detail=data.get('message'))
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+        if data.get('code') == 200: return {"status": "success"}
+        else: raise HTTPException(status_code=500, detail=data.get('message'))
+    except HTTPException: raise
+    except Exception as e: raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/v1/browse")
 async def browse_directory(source: str, path: str, unfiltered: bool = False):
