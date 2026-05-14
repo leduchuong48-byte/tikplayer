@@ -1,13 +1,28 @@
 FROM python:3.12-slim
 
+ARG JELLYFIN_FFMPEG_VERSION=7.1.3-6
+ARG JELLYFIN_FFMPEG_URL=https://github.com/jellyfin/jellyfin-ffmpeg/releases/download/v7.1.3-6/jellyfin-ffmpeg_7.1.3-6_portable_linux64-gpl.tar.xz
+
 LABEL org.opencontainers.image.title="Tikplayer"
 LABEL org.opencontainers.image.version="2.4"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
     curl \
     ca-certificates \
+    vainfo \
+    intel-media-va-driver \
+    libvpl2 \
+    libmfx-gen1.2 \
+    xz-utils \
     && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /usr/lib/jellyfin-ffmpeg && \
+    curl -fsSL -o /tmp/jellyfin-ffmpeg.tar.xz "$JELLYFIN_FFMPEG_URL" && \
+    tar -xJf /tmp/jellyfin-ffmpeg.tar.xz -C /usr/lib/jellyfin-ffmpeg && \
+    ln -sf /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg && \
+    ln -sf /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe && \
+    chmod +x /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/lib/jellyfin-ffmpeg/ffprobe && \
+    rm -f /tmp/jellyfin-ffmpeg.tar.xz
 
 WORKDIR /app
 

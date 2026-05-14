@@ -3,6 +3,7 @@ import json
 import random
 import re
 import time
+import base64
 import hashlib
 import httpx
 import asyncio
@@ -67,6 +68,14 @@ class FolderTargetDeleteModel(BaseModel):
     source: str
     path: str
 
+class PlaybackDebugEventModel(BaseModel):
+    attempt_id: int
+    phase: str
+    mode: str = ""
+    source: str = ""
+    raw_path: str = ""
+    detail: str = ""
+
 
 # --- 全局变量 ---
 DATA_DIR = "data"
@@ -79,7 +88,7 @@ video_pool: List[Dict[str, str]] = []
 scan_lock = asyncio.Lock()
 transcode_semaphore = asyncio.Semaphore(3)  # 最多3个并发转码
 token_cache: Dict[str, Dict[str, object]] = {}
-persisted_tokens: Dict[str, str] = {}
+persisted_tokens: Dict[str, Dict[str, object]] = {}
 token_cipher: Optional[Fernet] = None
 shared_http_client: Optional[httpx.AsyncClient] = None
 stale_prune_task: Optional[asyncio.Task] = None
@@ -138,6 +147,10 @@ APP_NAME = "Tikplayer"
 APP_VERSION = "2.4"
 
 load_dotenv()
+
+TOKEN_TTL_FALLBACK_SECONDS = max(300, int(os.getenv("ALIST_TOKEN_TTL_SECONDS", "21600")))
+TOKEN_REFRESH_BUFFER_SECONDS = max(60, int(os.getenv("ALIST_TOKEN_REFRESH_BUFFER_SECONDS", "600")))
+TOKEN_REFRESH_RETRY_SECONDS = max(30, int(os.getenv("ALIST_TOKEN_REFRESH_RETRY_SECONDS", "120")))
 
 
 def _build_source_env_prefix(source_name: str, index: int) -> str:
@@ -207,31 +220,266 @@ def _token_cache_key(base_url: str, username: str, password: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def _get_cached_token(base_url: str, username: str, password: str) -> Optional[str]:
+def _coerce_timestamp(value: object) -> Optional[float]:
+    if isinstance(value, (int, float)):
+        ts = float(value)
+    elif isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            ts = float(text)
+        except ValueError:
+            return None
+    else:
+        return None
+
+    if ts > 1_000_000_000_000:
+        ts /= 1000.0
+    return ts if ts > 0 else None
+
+
+def _decode_jwt_exp(token: str) -> Optional[float]:
+    if not token or token.count(".") != 2:
+        return None
+
+    try:
+        payload = token.split(".")[1]
+        padding = "=" * (-len(payload) % 4)
+        decoded = base64.urlsafe_b64decode((payload + padding).encode("utf-8"))
+        data = json.loads(decoded.decode("utf-8"))
+    except Exception:
+        return None
+
+    return _coerce_timestamp(data.get("exp"))
+
+
+def _extract_token_expiry(token: str, auth_data: Optional[dict] = None, now: Optional[float] = None) -> float:
+    issued_at = float(now if now is not None else time.time())
+    payload = auth_data if isinstance(auth_data, dict) else {}
+
+    direct_fields = (
+        "expires_at",
+        "expired_at",
+        "expire_at",
+        "expire",
+        "exp",
+        "expiration",
+        "expires",
+        "token_expires_at",
+        "token_expire_at",
+    )
+    for field in direct_fields:
+        ts = _coerce_timestamp(payload.get(field))
+        if ts is not None:
+            return ts
+
+    relative_fields = (
+        "expires_in",
+        "expire_in",
+        "ttl",
+        "token_expires_in",
+        "token_ttl",
+    )
+    for field in relative_fields:
+        ttl = _coerce_timestamp(payload.get(field))
+        if ttl is not None:
+            return issued_at + ttl
+
+    jwt_exp = _decode_jwt_exp(token)
+    if jwt_exp is not None:
+        return jwt_exp
+
+    return issued_at + TOKEN_TTL_FALLBACK_SECONDS
+
+
+def _compute_refresh_after(updated_at: float, expires_at: float) -> float:
+    if expires_at <= updated_at:
+        return updated_at
+    return max(updated_at, expires_at - TOKEN_REFRESH_BUFFER_SECONDS)
+
+
+def _build_token_record(
+    token: str,
+    *,
+    updated_at: Optional[float] = None,
+    expires_at: Optional[float] = None,
+    refresh_after: Optional[float] = None,
+    last_error: str = "",
+) -> Dict[str, object]:
+    issued_at = float(updated_at if updated_at is not None else time.time())
+    resolved_expires = _coerce_timestamp(expires_at)
+    if resolved_expires is None:
+        resolved_expires = issued_at + TOKEN_TTL_FALLBACK_SECONDS
+
+    resolved_refresh = _coerce_timestamp(refresh_after)
+    if resolved_refresh is None:
+        resolved_refresh = _compute_refresh_after(issued_at, resolved_expires)
+    resolved_refresh = min(float(resolved_expires), max(float(issued_at), float(resolved_refresh)))
+
+    return {
+        "token": token,
+        "updated_at": float(issued_at),
+        "expires_at": float(resolved_expires),
+        "refresh_after": float(resolved_refresh),
+        "last_error": str(last_error or ""),
+    }
+
+
+def _encrypt_token_record(record: Dict[str, object]) -> Dict[str, object]:
+    token = str(record.get("token") or "")
+    if not token:
+        return {}
+    return {
+        "token": _encrypt_token(token),
+        "updated_at": float(record.get("updated_at") or time.time()),
+        "expires_at": float(record.get("expires_at") or time.time() + TOKEN_TTL_FALLBACK_SECONDS),
+        "refresh_after": float(record.get("refresh_after") or time.time()),
+        "last_error": str(record.get("last_error") or ""),
+    }
+
+
+def _normalize_persisted_token_value(raw: object, *, now: Optional[float] = None) -> Optional[Dict[str, object]]:
+    current_ts = float(now if now is not None else time.time())
+
+    if isinstance(raw, str):
+        token = _decrypt_token(raw)
+        if not token:
+            return None
+        record = _build_token_record(
+            token,
+            updated_at=current_ts,
+            expires_at=_decode_jwt_exp(token),
+        )
+        return _encrypt_token_record(record)
+
+    if not isinstance(raw, dict):
+        return None
+
+    token_text = raw.get("token")
+    if not isinstance(token_text, str) or not token_text:
+        return None
+
+    token = _decrypt_token(token_text)
+    if not token:
+        return None
+
+    record = _build_token_record(
+        token,
+        updated_at=_coerce_timestamp(raw.get("updated_at")) or current_ts,
+        expires_at=_coerce_timestamp(raw.get("expires_at")),
+        refresh_after=_coerce_timestamp(raw.get("refresh_after")),
+        last_error=str(raw.get("last_error") or ""),
+    )
+    return _encrypt_token_record(record)
+
+
+def _decrypt_persisted_token_record(raw: object) -> Optional[Dict[str, object]]:
+    normalized = _normalize_persisted_token_value(raw)
+    if not normalized:
+        return None
+
+    token_text = normalized.get("token")
+    token = _decrypt_token(str(token_text or ""))
+    if not token:
+        return None
+
+    return _build_token_record(
+        token,
+        updated_at=_coerce_timestamp(normalized.get("updated_at")) or time.time(),
+        expires_at=_coerce_timestamp(normalized.get("expires_at")),
+        refresh_after=_coerce_timestamp(normalized.get("refresh_after")),
+        last_error=str(normalized.get("last_error") or ""),
+    )
+
+
+def _token_record_is_expired(record: Optional[Dict[str, object]], now: Optional[float] = None) -> bool:
+    if not record:
+        return True
+    current_ts = float(now if now is not None else time.time())
+    expires_at = _coerce_timestamp(record.get("expires_at"))
+    return expires_at is None or current_ts >= expires_at
+
+
+def _token_record_needs_refresh(record: Optional[Dict[str, object]], now: Optional[float] = None) -> bool:
+    if not record:
+        return False
+    current_ts = float(now if now is not None else time.time())
+    refresh_after = _coerce_timestamp(record.get("refresh_after"))
+    return refresh_after is None or current_ts >= refresh_after or _token_record_is_expired(record, current_ts)
+
+
+def _mark_token_record_refresh_failure(record: Dict[str, object], error: str, now: Optional[float] = None) -> Dict[str, object]:
+    current_ts = float(now if now is not None else time.time())
+    retry_at = min(
+        float(record.get("expires_at") or current_ts),
+        current_ts + TOKEN_REFRESH_RETRY_SECONDS,
+    )
+    return _build_token_record(
+        str(record.get("token") or ""),
+        updated_at=_coerce_timestamp(record.get("updated_at")) or current_ts,
+        expires_at=_coerce_timestamp(record.get("expires_at")),
+        refresh_after=retry_at,
+        last_error=error,
+    )
+
+
+def _get_cached_token_record(base_url: str, username: str, password: str) -> Optional[Dict[str, object]]:
     key = _token_cache_key(base_url, username, password)
     data = token_cache.get(key)
-    if not data:
+    if not isinstance(data, dict):
         return None
-    raw_expires = data.get("expires_at")
-    if isinstance(raw_expires, (int, float)):
-        expires_at = float(raw_expires)
-    else:
-        expires_at = 0.0
-    if time.time() >= expires_at:
+
+    token = data.get("token")
+    if not isinstance(token, str) or not token:
         token_cache.pop(key, None)
         return None
-    token = data.get("token")
+
+    record = _build_token_record(
+        token,
+        updated_at=_coerce_timestamp(data.get("updated_at")) or time.time(),
+        expires_at=_coerce_timestamp(data.get("expires_at")),
+        refresh_after=_coerce_timestamp(data.get("refresh_after")),
+        last_error=str(data.get("last_error") or ""),
+    )
+    token_cache[key] = record
+    return dict(record)
+
+
+def _get_cached_token(base_url: str, username: str, password: str) -> Optional[str]:
+    record = _get_cached_token_record(base_url, username, password)
+    if not record or _token_record_is_expired(record):
+        return None
+    token = record.get("token")
     if isinstance(token, str) and token:
         return token
     return None
 
 
-def _set_cached_token(base_url: str, username: str, password: str, token: str, ttl_seconds: int = 300) -> None:
+def _set_cached_token_record(base_url: str, username: str, password: str, record: Dict[str, object]) -> None:
     key = _token_cache_key(base_url, username, password)
-    token_cache[key] = {
-        "token": token,
-        "expires_at": time.time() + ttl_seconds,
-    }
+    token_cache[key] = _build_token_record(
+        str(record.get("token") or ""),
+        updated_at=_coerce_timestamp(record.get("updated_at")) or time.time(),
+        expires_at=_coerce_timestamp(record.get("expires_at")),
+        refresh_after=_coerce_timestamp(record.get("refresh_after")),
+        last_error=str(record.get("last_error") or ""),
+    )
+
+
+def _set_cached_token(
+    base_url: str,
+    username: str,
+    password: str,
+    token: str,
+    ttl_seconds: int = TOKEN_TTL_FALLBACK_SECONDS,
+) -> None:
+    record = _build_token_record(
+        token,
+        updated_at=time.time(),
+        expires_at=time.time() + ttl_seconds,
+    )
+    _set_cached_token_record(base_url, username, password, record)
 
 
 def _clear_cached_token(base_url: str, username: str, password: str) -> None:
@@ -249,23 +497,21 @@ def _load_persisted_tokens() -> None:
             data = json.load(f)
         os.chmod(TOKEN_STORE_FILE, 0o600)
         if isinstance(data, dict):
-            persisted_tokens = {str(k): str(v) for k, v in data.items() if isinstance(v, str) and v}
+            migrated: Dict[str, Dict[str, object]] = {}
+            needs_rewrite = False
+            for k, v in data.items():
+                normalized = _normalize_persisted_token_value(v)
+                if normalized:
+                    migrated[str(k)] = normalized
+                    if v != normalized:
+                        needs_rewrite = True
+                else:
+                    needs_rewrite = True
+            persisted_tokens = migrated
+            if needs_rewrite:
+                _save_persisted_tokens()
         else:
             persisted_tokens = {}
-
-        # 兼容历史明文 token，加载后自动迁移为密文
-        if token_cipher:
-            needs_rewrite = False
-            migrated: Dict[str, str] = {}
-            for k, v in persisted_tokens.items():
-                decrypted = _decrypt_token(v)
-                if decrypted and v != _encrypt_token(decrypted):
-                    needs_rewrite = True
-                if decrypted:
-                    migrated[k] = _encrypt_token(decrypted)
-            if needs_rewrite:
-                persisted_tokens = migrated
-                _save_persisted_tokens()
     except Exception as e:
         print(f"Error: {e}")
         persisted_tokens = {}
@@ -282,17 +528,52 @@ def _save_persisted_tokens() -> None:
 
 
 def _get_persisted_token(base_url: str, username: str, password: str) -> Optional[str]:
-    key = _token_cache_key(base_url, username, password)
-    token = persisted_tokens.get(key)
-    if not token:
+    record = _get_persisted_token_record(base_url, username, password)
+    if not record:
         return None
-    return _decrypt_token(token)
+    token = record.get("token")
+    return token if isinstance(token, str) and token else None
 
 
-def _set_persisted_token(base_url: str, username: str, password: str, token: str) -> None:
+def _get_persisted_token_record(base_url: str, username: str, password: str) -> Optional[Dict[str, object]]:
     key = _token_cache_key(base_url, username, password)
-    persisted_tokens[key] = _encrypt_token(token)
+    raw = persisted_tokens.get(key)
+    if raw is None:
+        return None
+    record = _decrypt_persisted_token_record(raw)
+    if not record:
+        persisted_tokens.pop(key, None)
+        _save_persisted_tokens()
+        return None
+    normalized = _encrypt_token_record(record)
+    if raw != normalized:
+        persisted_tokens[key] = normalized
+        _save_persisted_tokens()
+    return record
+
+
+def _set_persisted_token_record(base_url: str, username: str, password: str, record: Dict[str, object]) -> None:
+    key = _token_cache_key(base_url, username, password)
+    normalized = _encrypt_token_record(record)
+    if not normalized:
+        return
+    persisted_tokens[key] = normalized
     _save_persisted_tokens()
+
+
+def _set_persisted_token(
+    base_url: str,
+    username: str,
+    password: str,
+    token: str,
+    ttl_seconds: int = TOKEN_TTL_FALLBACK_SECONDS,
+) -> None:
+    record = _build_token_record(
+        token,
+        updated_at=time.time(),
+        expires_at=time.time() + ttl_seconds,
+    )
+    _set_persisted_token_record(base_url, username, password, record)
 
 
 def _clear_persisted_token(base_url: str, username: str, password: str) -> None:
@@ -351,6 +632,19 @@ def _decrypt_token(token_text: str) -> Optional[str]:
             return token_text
         return None
 
+
+def _is_refreshable_token_error(error: str) -> bool:
+    lowered = str(error or "").lower()
+    return any(
+        needle in lowered
+        for needle in (
+            "token is invalidated",
+            "token is expired",
+            "token expired",
+            "token has expired",
+        )
+    )
+
 # --- Alist 工具类 ---
 class AlistHelper:
     @staticmethod
@@ -362,7 +656,9 @@ class AlistHelper:
         }
 
     @staticmethod
-    async def login_with_error(client: httpx.AsyncClient, base_url: str, username: str, password: str) -> tuple[Optional[str], Optional[str]]:
+    async def login_with_error(
+        client: httpx.AsyncClient, base_url: str, username: str, password: str
+    ) -> tuple[Optional[str], Optional[str], Dict[str, object]]:
         base_url = base_url.rstrip('/')
         if base_url.endswith('/dav'): base_url = base_url[:-4]
         url = f"{base_url}/api/auth/login"
@@ -373,15 +669,17 @@ class AlistHelper:
             if resp.status_code == 200 and data.get('code') == 200:
                 token = data.get('data', {}).get('token')
                 if token:
-                    return token, None
-            return None, data.get('message') or f"HTTP {resp.status_code}"
+                    return token, None, {"auth_data": data.get("data", {})}
+            message = data.get('message') or f"HTTP {resp.status_code}"
+            return None, message, {"last_error": message}
         except Exception as e:
             print(f"Error: {e}")
-            return None, str(e)
+            message = str(e)
+            return None, message, {"last_error": message}
 
     @staticmethod
     async def login(client: httpx.AsyncClient, base_url: str, username: str, password: str) -> Optional[str]:
-        token, _ = await AlistHelper.login_with_error(client, base_url, username, password)
+        token, _, _ = await AlistHelper.login_with_error(client, base_url, username, password)
         return token
 
     @staticmethod
@@ -470,29 +768,79 @@ async def get_source_token(
     force_refresh: bool = False,
     verify_cached: bool = False,
 ) -> tuple[Optional[str], Optional[str]]:
-    if not force_refresh:
-        cached = _get_cached_token(base_url, username, password)
-        if cached:
-            if not verify_cached or await AlistHelper.validate_token(client, base_url, cached):
-                return cached, None
-            _clear_cached_token(base_url, username, password)
+    async def login_and_store() -> tuple[Optional[str], Optional[Dict[str, object]], Optional[str]]:
+        login_result = await AlistHelper.login_with_error(client, base_url, username, password)
+        if len(login_result) == 3:
+            token, err, meta = login_result
+        else:
+            token, err = login_result  # type: ignore[misc]
+            meta = {}
 
-        persisted = _get_persisted_token(base_url, username, password)
-        if persisted:
-            if not verify_cached or await AlistHelper.validate_token(client, base_url, persisted):
-                _set_cached_token(base_url, username, password, persisted)
-                return persisted, None
+        if token:
+            auth_data = meta.get("auth_data") if isinstance(meta, dict) else {}
+            expires_at = meta.get("expires_at") if isinstance(meta, dict) else None
+            record = _build_token_record(
+                token,
+                updated_at=time.time(),
+                expires_at=expires_at or _extract_token_expiry(token, auth_data, time.time()),
+            )
+            _set_cached_token_record(base_url, username, password, record)
+            _set_persisted_token_record(base_url, username, password, record)
+            return token, record, None
+
+        error = err or (meta.get("last_error") if isinstance(meta, dict) else None) or "Login failed"
+        return None, None, str(error)
+
+    record: Optional[Dict[str, object]] = None
+    if not force_refresh:
+        record = _get_cached_token_record(base_url, username, password)
+        if record is None:
+            record = _get_persisted_token_record(base_url, username, password)
+            if record:
+                _set_cached_token_record(base_url, username, password, record)
+
+    if record and not force_refresh:
+        if _token_record_needs_refresh(record):
+            token, refreshed_record, refresh_err = await login_and_store()
+            if token and refreshed_record:
+                return token, None
+
+            if _token_record_is_expired(record):
+                _clear_cached_token(base_url, username, password)
+                _clear_persisted_token(base_url, username, password)
+                return None, refresh_err
+
+            fallback_record = _mark_token_record_refresh_failure(record, refresh_err or "refresh failed")
+            _set_cached_token_record(base_url, username, password, fallback_record)
+            _set_persisted_token_record(base_url, username, password, fallback_record)
+            token_text = str(fallback_record.get("token") or "")
+            if verify_cached and token_text:
+                if await AlistHelper.validate_token(client, base_url, token_text):
+                    return token_text, None
+                _clear_cached_token(base_url, username, password)
+                _clear_persisted_token(base_url, username, password)
+                return None, refresh_err
+            return token_text or None, None if token_text else refresh_err
+
+        token_text = str(record.get("token") or "")
+        if token_text:
+            if not verify_cached or await AlistHelper.validate_token(client, base_url, token_text):
+                return token_text, None
+            _clear_cached_token(base_url, username, password)
             _clear_persisted_token(base_url, username, password)
 
-    token, err = await AlistHelper.login_with_error(client, base_url, username, password)
+    token, _, err = await login_and_store()
     if token:
-        _set_cached_token(base_url, username, password, token)
-        _set_persisted_token(base_url, username, password, token)
         return token, None
-
     return None, err
 
 # --- FFmpeg ---
+TRANSCODE_CAPABILITIES = {
+    "qsv": {"ok": None, "reason": "not_probed"},
+    "vaapi": {"ok": None, "reason": "not_probed"},
+    "cpu": {"ok": True, "reason": "always_available"},
+}
+
 def _parse_transcode_backends() -> List[str]:
     raw = (os.getenv("TRANSCODE_BACKENDS") or "qsv,vaapi,cpu").strip().lower()
     allowed = {"qsv", "vaapi", "cpu"}
@@ -518,12 +866,27 @@ def _build_ffmpeg_cmd(input_url: str, backend: str) -> List[str]:
     common_output = ["-f", "mp4", "-movflags", "frag_keyframe+empty_moov", "pipe:1"]
 
     if backend == "qsv":
-        return common_input + [
+        return [
+            "ffmpeg",
+            "-init_hw_device", "vaapi=va:/dev/dri/renderD128",
+            "-init_hw_device", "qsv=qs@va",
+            "-filter_hw_device", "qs",
+            "-reconnect", "1",
+            "-reconnect_streamed", "1",
+            "-reconnect_on_network_error", "1",
+            "-reconnect_on_http_error", "4xx,5xx",
+            "-reconnect_delay_max", "5",
+            "-rw_timeout", "15000000",
+            "-i", input_url,
+            "-vf", "format=nv12,hwupload=extra_hw_frames=64",
             "-c:v", "h264_qsv",
-            "-preset", "veryfast",
+            "-low_power", "1",
+            "-bf", "0",
             "-b:v", "2500k",
             "-maxrate", "3000k",
             "-bufsize", "6000k",
+            "-look_ahead", "0",
+            "-g", "60",
         ] + common_audio + common_output
 
     if backend == "vaapi":
@@ -560,8 +923,62 @@ def _cleanup_process(process):
             except Exception: pass
 
 
+
+
+def _probe_backend_cmd(backend: str) -> List[str]:
+    if backend == "qsv":
+        return [
+            "sh", "-lc",
+            "rm -f /tmp/qsv-probe-src.mp4 /tmp/qsv-probe-out.mp4 && "
+            "ffmpeg -hide_banner -y -f lavfi -i testsrc2=size=1280x720:rate=30 -t 1 -c:v libx264 -pix_fmt yuv420p /tmp/qsv-probe-src.mp4 >/dev/null 2>&1 && "
+            "ffmpeg -hide_banner -y -init_hw_device vaapi=va:/dev/dri/renderD128 -init_hw_device qsv=qs@va -filter_hw_device qs -i /tmp/qsv-probe-src.mp4 -vf format=nv12,hwupload=extra_hw_frames=64 -c:v h264_qsv -low_power 1 -look_ahead 0 -bf 0 -g 60 -b:v 2500k -maxrate 3000k -bufsize 6000k -an /tmp/qsv-probe-out.mp4"
+        ]
+    if backend == "vaapi":
+        return [
+            "ffmpeg", "-hide_banner",
+            "-init_hw_device", "vaapi=va:/dev/dri/renderD128",
+            "-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=30",
+            "-t", "1", "-vf", "format=nv12,hwupload", "-c:v", "h264_vaapi", "-an", "-f", "null", "-",
+        ]
+    return ["true"]
+
+
+def probe_transcode_capabilities() -> dict:
+    result = {
+        "qsv": {"ok": False, "reason": "not_tested"},
+        "vaapi": {"ok": False, "reason": "not_tested"},
+        "cpu": {"ok": True, "reason": "always_available"},
+    }
+
+    for backend in ("qsv", "vaapi"):
+        cmd = _probe_backend_cmd(backend)
+        try:
+            p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15)
+            if p.returncode == 0:
+                result[backend] = {"ok": True, "reason": "probe_ok"}
+            else:
+                err = (p.stderr or b"").decode(errors="ignore")
+                head = err.strip().splitlines()[:2]
+                result[backend] = {"ok": False, "reason": "probe_failed", "detail": " | ".join(head)}
+        except Exception as e:
+            result[backend] = {"ok": False, "reason": "probe_exception", "detail": str(e)}
+
+    return result
+
+
+def _capability_ok(backend: str) -> bool:
+    info = TRANSCODE_CAPABILITIES.get(backend) or {}
+    return bool(info.get("ok"))
+
+
+
+def get_effective_transcode_backends() -> List[str]:
+    requested = _parse_transcode_backends()
+    backends = [b for b in requested if b == "cpu" or _capability_ok(b)]
+    return backends or ["cpu"]
+
 def ffmpeg_transcode_generator(input_url: str):
-    backends = _parse_transcode_backends()
+    backends = get_effective_transcode_backends()
     last_error = ""
 
     for backend in backends:
@@ -1170,6 +1587,8 @@ async def lifespan(app: FastAPI):
         timeout=httpx.Timeout(connect=5.0, read=20.0, write=20.0, pool=5.0),
         follow_redirects=True,
     )
+    TRANSCODE_CAPABILITIES.update(probe_transcode_capabilities())
+    print(f"🎛️ Transcode capabilities: {TRANSCODE_CAPABILITIES}")
     await request_reload(reason="startup", dedupe=True)
     stale_prune_task = asyncio.create_task(periodic_stale_prune_loop())
     yield
@@ -1217,19 +1636,19 @@ async def read_index():
             )
     return HTMLResponse("index.html missing")
 
-@app.get("/manifest.json")
+@app.api_route("/manifest.json", methods=["GET", "HEAD"])
 async def get_manifest():
     if os.path.exists("manifest.json"):
         return FileResponse("manifest.json", media_type="application/manifest+json")
     raise HTTPException(status_code=404)
 
-@app.get("/sw.js")
+@app.api_route("/sw.js", methods=["GET", "HEAD"])
 async def get_sw():
     if os.path.exists("sw.js"):
         return FileResponse("sw.js", media_type="application/javascript")
     raise HTTPException(status_code=404)
 
-@app.get("/offline.html")
+@app.api_route("/offline.html", methods=["GET", "HEAD"])
 async def get_offline():
     if os.path.exists("offline.html"):
         return FileResponse("offline.html", media_type="text/html")
@@ -1271,7 +1690,7 @@ async def browse_source_dirs(payload: SourceDirsModel):
             raise HTTPException(status_code=400, detail=login_err or "Login failed")
 
         files, err = await AlistHelper.list_files_with_error(client, payload.url, token, payload.path or "/")
-        if err and "token is invalidated" in err.lower():
+        if err and _is_refreshable_token_error(err):
             token, login_err = await get_source_token(client, payload.url, username, password, force_refresh=True)
             if not token:
                 raise HTTPException(status_code=400, detail=login_err or "Login failed")
@@ -1466,7 +1885,25 @@ async def delete_folder_target(payload: FolderTargetDeleteModel):
 
     return {"status": "success", "message": "真实目录已删除"}
 
+@app.post("/v1/playback-debug")
+async def playback_debug(payload: PlaybackDebugEventModel):
+    print(
+        f"📱 PlaybackDebug attempt={payload.attempt_id} phase={payload.phase} "
+        f"mode={payload.mode} source={payload.source} path={payload.raw_path} detail={payload.detail}"
+    )
+    return {"status": "ok"}
+
 # --- Media API ---
+@app.get("/v1/transcode/capabilities")
+async def get_transcode_capabilities():
+    requested = _parse_transcode_backends()
+    effective = get_effective_transcode_backends()
+    return {
+        "requested": requested,
+        "effective": effective,
+        "capabilities": TRANSCODE_CAPABILITIES,
+    }
+
 @app.get("/v1/get_video")
 async def get_random_video(request: Request):
     if not video_pool:
@@ -1478,14 +1915,20 @@ async def get_random_video(request: Request):
 def build_media_response(request: Request, media: dict):
     encoded_path = urllib.parse.quote(media['path'])
     encoded_source = urllib.parse.quote(str(media['source']), safe="")
-    stream_url = f"{request.base_url}v1/stream?source={encoded_source}&path={encoded_path}"
-    transcode_url = f"{request.base_url}v1/transcode?source={encoded_source}&path={encoded_path}"
-    download_url = f"{request.base_url}v1/download?source={encoded_source}&path={encoded_path}"
-    is_native = media['path'].lower().endswith(NATIVE_FORMATS)
+    # Use root-relative URLs to avoid mixed-content issues behind reverse proxies
+    # (e.g. app served over HTTPS while uvicorn sees HTTP internally).
+    stream_url = f"/v1/stream?source={encoded_source}&path={encoded_path}"
+    transcode_url = f"/v1/transcode?source={encoded_source}&path={encoded_path}"
+    download_url = f"/v1/download?source={encoded_source}&path={encoded_path}"
+    lower_path = media['path'].lower()
+    is_native = lower_path.endswith(NATIVE_FORMATS)
+    # Mobile-risky formats: often unstable as direct play in mobile browsers.
+    mobile_risky = lower_path.endswith((".ts", ".flv", ".wmv", ".m2ts"))
     return {
         "url": stream_url, "transcode_url": transcode_url, "download_url": download_url,
         "source": media['source'], "raw_path": media['path'], "img_url": media.get('thumb') or "/image/no_preview.png",
         "type": media.get('type', 'video'), "recommend_transcode": not is_native,
+        "mobile_risky": mobile_risky,
         "name": os.path.basename(media['path'])
     }
 
@@ -1559,7 +2002,7 @@ async def _resolve_media_raw_url(source: str, path: str, evict_on_not_found: boo
     for attempt in range(3):
         token = instance.get('token') or ""
         details, err = await AlistHelper.get_file_details_with_error(shared_http_client, clean_url, token, probe_path)
-        if err and "token is invalidated" in err.lower():
+        if err and _is_refreshable_token_error(err):
             token, login_err = await get_source_token(shared_http_client, clean_url, username, password, force_refresh=True)
             if not token:
                 _record_stream_result(False, source, "login_failed")
@@ -1647,7 +2090,7 @@ async def _probe_media_exists(instance: dict, path: str) -> tuple[Optional[bool]
     query_path = _normalize_media_path(path)
 
     details, err = await AlistHelper.get_file_details_with_error(shared_http_client, clean_url, token, query_path)
-    if err and "token is invalidated" in err.lower():
+    if err and _is_refreshable_token_error(err):
         new_token, login_err = await get_source_token(
             shared_http_client, clean_url, username, password, force_refresh=True
         )
@@ -2022,7 +2465,7 @@ async def browse_directory(source: str, path: str, unfiltered: bool = False):
     password = str(conf.get('password') or "")
     async with httpx.AsyncClient() as client:
         files, err = await AlistHelper.list_files_with_error(client, clean_url, instance['token'], path)
-        if err and "token is invalidated" in err.lower():
+        if err and _is_refreshable_token_error(err):
             token, login_err = await get_source_token(client, clean_url, username, password, force_refresh=True)
             if token:
                 instance['token'] = token

@@ -14,6 +14,7 @@
 
     <script src="/static/hls.min.js"></script>
     <script src="/static/artplayer.js"></script>
+    <script src="/static/playback-policy.js"></script>
     
     <style>
         :root { --primary: #fe2c55; --bg: #000; --card-bg: #1a1a1a; --text: #fff; --nav-height: 50px; }
@@ -45,6 +46,23 @@
         .control-icon { font-size: 22px; margin-bottom: 2px; width: 38px; height: 38px; display:flex; align-items:center; justify-content:center; text-shadow: 0 1px 3px rgba(0,0,0,0.8); filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5)); }
         .control-text { font-size: 10px; font-weight: 500; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
 
+        .media-name-overlay {
+            position: fixed;
+            left: 12px;
+            right: 88px;
+            bottom: calc(var(--nav-height) + env(safe-area-inset-bottom) + 22px);
+            z-index: 1201;
+            display: none;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            pointer-events: none;
+            font-size: 13px;
+            font-weight: 600;
+            line-height: 1.25;
+            color: rgba(255,255,255,0.95);
+            text-shadow: 0 1px 3px rgba(0,0,0,0.85);
+        }
         .progress-container { position: fixed; bottom: calc(var(--nav-height) + env(safe-area-inset-bottom)); left: 0; width: 100%; height: 20px; z-index: 1200; display: flex; align-items: flex-end; cursor: pointer; touch-action: none; }
         .progress-bg { width: 100%; height: 1px; background: rgba(255,255,255,0.25); position: relative; transition: height 0.2s ease; }
         .progress-current { height: 100%; width: 0; background: #fff; position: absolute; top: 0; left: 0; }
@@ -203,7 +221,7 @@
                     <span class="control-text">删除</span>
                 </div>
             </div>
-
+            <div class="media-name-overlay" id="mediaNameOverlay" aria-hidden="true"></div>
             <div class="progress-container" id="progressBar">
                 <div class="progress-bg"><div class="progress-current" id="progressCurrent"><div class="progress-thumb"></div></div></div>
             </div>
@@ -381,7 +399,8 @@
                 disableSeekReason: '',
                 seekInFlight: false,
                 lastSeekAt: 0,
-                stalledRecoveryAt: 0
+                stalledRecoveryAt: 0,
+                playAttemptSeq: 0
             }
         };
         let imageTimer = null;
@@ -878,6 +897,83 @@
             badge.style.display = state.currentTab === 'settings' ? 'inline-flex' : 'none';
         }
 
+        function isMobileClient() {
+            return /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent || '');
+        }
+
+        function reportPlaybackDebug(attemptId, phase, media, detail, mode) {
+            try {
+                fetch('/v1/playback-debug', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({
+                        attempt_id: attemptId,
+                        phase,
+                        mode: mode || '',
+                        source: media?.source || '',
+                        raw_path: media?.raw_path || '',
+                        detail: detail || ''
+                    })
+                }).catch(() => {});
+            } catch (_) {}
+        }
+
+        const playbackPolicy = window.PlaybackPolicy || {};
+
+        function shouldSkipDirectByFailCache(media) {
+            if (!playbackPolicy.shouldUseDirectFailCacheFromStorage) return false;
+            return playbackPolicy.shouldUseDirectFailCacheFromStorage(localStorage, media);
+        }
+
+        function markDirectFailCache(media) {
+            if (!playbackPolicy.markDirectFailInStorage) return;
+            playbackPolicy.markDirectFailInStorage(localStorage, media);
+        }
+
+        function choosePlaybackSource(media, options = {}) {
+            const forceDirect = options.forceDirect === true;
+            const hasTranscodeUrl = !!(media && media.transcode_url);
+            const hasDirectFailCache = shouldSkipDirectByFailCache(media);
+            const decision = playbackPolicy.chooseInitialPlaybackRoute
+                ? playbackPolicy.chooseInitialPlaybackRoute({
+                    manualTranscodeEnabled: state.useTranscode,
+                    forceDirect,
+                    hasDirectFailCache,
+                    hasTranscodeUrl,
+                })
+                : { route: state.useTranscode && !forceDirect && hasTranscodeUrl ? 'transcode' : 'direct' };
+            const route = decision && decision.route === 'transcode' && hasTranscodeUrl ? 'transcode' : 'direct';
+            return {
+                directFailCached: hasDirectFailCache,
+                route,
+                url: route === 'transcode' ? media.transcode_url : media.url,
+            };
+        }
+
+        function getStartupFallbackDecision(activeRoute, playbackStarted, media) {
+            if (!playbackPolicy.shouldFallbackAfterStartupFailure) {
+                return { action: 'none', markDirectFailure: false };
+            }
+            return playbackPolicy.shouldFallbackAfterStartupFailure({
+                activeRoute,
+                playbackStarted,
+                hasTranscodeUrl: !!(media && media.transcode_url),
+            });
+        }
+
+        function updateMediaNameOverlay(media) {
+            const overlay = document.getElementById('mediaNameOverlay');
+            if (!overlay) return;
+            const shouldShow = playbackPolicy.shouldShowMediaName
+                ? playbackPolicy.shouldShowMediaName(media)
+                : false;
+            const text = shouldShow && playbackPolicy.getDisplayMediaName
+                ? playbackPolicy.getDisplayMediaName(media)
+                : '';
+            overlay.textContent = text;
+            overlay.style.display = text ? 'block' : 'none';
+        }
+
         function switchTab(tab) {
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
             document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -960,6 +1056,7 @@
             document.getElementById('image-viewer').style.display = 'none';
             document.getElementById('progressCurrent').style.width = '0%';
             document.getElementById('playIcon').classList.remove('show');
+            updateMediaNameOverlay(null);
         }
 
         Artplayer.RECONNECT_TIME_MAX = 5;
@@ -970,6 +1067,7 @@
             const attempt = Number.isFinite(options.attempt) ? options.attempt : 0;
             const playerDiv = document.getElementById('player');
             const imgDiv = document.getElementById('image-viewer');
+            updateMediaNameOverlay(media);
             if(media.type === 'image') {
                 state.mediaState.disableSeekReason = '当前为图片';
                 imgDiv.style.backgroundImage = `url('${media.url}')`;
@@ -978,16 +1076,30 @@
                 startImageTimer();
             } else {
                 playerDiv.style.display = 'block';
-                let url = (state.useTranscode && !forceDirect) ? media.transcode_url : media.url;
-                state.mediaState.disableSeekReason = (url === media.transcode_url) ? '转码流暂不支持拖动定位，请关闭转码后重试' : '';
-                if(!state.useTranscode && media.recommend_transcode) showToast("可开启转码优化播放");
+                const selection = choosePlaybackSource(media, { forceDirect });
+                const activeRoute = selection.route;
+                const useTranscodeNow = activeRoute === 'transcode';
+                const directFailCached = selection.directFailCached;
+                let url = selection.url;
+                state.mediaState.disableSeekReason = useTranscodeNow ? '转码流暂不支持拖动定位，请关闭转码后重试' : '';
                 const playToken = ++state.mediaState.playRequestToken;
+                const playAttemptId = ++state.mediaState.playAttemptSeq;
                 let playbackStarted = false;
                 let recovered = false;
+                let startupFallbackTimer = null;
+                console.info(`[play:${playAttemptId}] start`, {
+                    url,
+                    activeRoute,
+                    directFailCached,
+                    manualTranscodeEnabled: state.useTranscode,
+                    rawPath: media.raw_path,
+                });
+                reportPlaybackDebug(playAttemptId, 'start', media, url, activeRoute);
 
                 // 仅在视频尚未开始播放时才触发恢复（参考 LibreTV 架构）
                 const recoverPlayback = (reason) => {
                     if (recovered) return;
+                    if (startupFallbackTimer) { clearTimeout(startupFallbackTimer); startupFallbackTimer = null; }
                     if (playToken !== state.mediaState.playRequestToken) return;
                     if (playbackStarted) {
                         // 已经开始播放后的错误只记录，不重建播放器
@@ -996,10 +1108,22 @@
                     }
                     recovered = true;
 
-                    if ((state.useTranscode && !forceDirect) && media.url) {
-                        showToast("转码流加载异常，自动切换原始流");
+                    const fallbackDecision = getStartupFallbackDecision(activeRoute, playbackStarted, media);
+                    if (fallbackDecision.action === 'fallback') {
+                        if (fallbackDecision.markDirectFailure) {
+                            markDirectFailCache(media);
+                        }
+                        const nextRoute = fallbackDecision.nextRoute === 'transcode' ? 'transcode' : 'direct';
+                        reportPlaybackDebug(
+                            playAttemptId,
+                            nextRoute === 'transcode' ? 'fallback_transcode' : 'fallback_direct',
+                            media,
+                            reason,
+                            activeRoute
+                        );
+                        showToast(nextRoute === 'transcode' ? '直放异常，自动切换转码' : '转码流加载异常，自动切换原始流');
                         resetPlayerUI();
-                        renderPlayer(media, { forceDirect: true, attempt: attempt + 1 });
+                        renderPlayer(media, { forceDirect: nextRoute === 'direct', attempt: attempt + 1 });
                         return;
                     }
 
@@ -1010,10 +1134,28 @@
                         return;
                     }
 
-                    console.warn('加载失败，自动切换下一条:', reason);
+                    reportPlaybackDebug(playAttemptId, 'fail_next', media, String(reason || ''), useTranscodeNow ? 'transcode' : 'direct');
+                    console.warn(`[play:${playAttemptId}] fail->next`, reason, { activeRoute, recovered, playbackStarted });
                     showToast("当前资源加载失败，自动下一条");
                     loadNextVideo(true);
                 };
+
+                // Direct playback can hang before `playing` without a hard error.
+                // In automatic mode, fall back to transcoding after startup timeout.
+                if (activeRoute === 'direct' && media.transcode_url) {
+                    startupFallbackTimer = setTimeout(() => {
+                        if (recovered) return;
+                        if (playToken !== state.mediaState.playRequestToken) return;
+                        if (playbackStarted) return;
+                        recovered = true;
+                        markDirectFailCache(media);
+                        console.warn(`[play:${playAttemptId}] direct timeout -> transcode fallback`);
+                        reportPlaybackDebug(playAttemptId, 'timeout_fallback', media, 'timeout', activeRoute);
+                        showToast('播放启动超时，切换备用链路');
+                        resetPlayerUI();
+                        renderPlayer(media, { forceDirect: false, attempt: attempt + 1 });
+                    }, 7000);
+                }
 
                 const isHls = /\.m3u8(\?|$)/i.test(url);
                 state.dp = new Artplayer({
@@ -1144,7 +1286,7 @@
                             if (state.mediaState.seekInFlight) return;
                             if (state.dp.video.readyState >= 3) return;
                             trySoftRecover(reason);
-                        }, 1200);
+                        }, isMobileClient() ? 2600 : 1200);
                     };
 
                     // 进度条更新
@@ -1159,8 +1301,9 @@
                     state.dp.video.addEventListener('canplay', () => {
                         clearStallTimer();
                         if (playToken !== state.mediaState.playRequestToken) return;
-                        playbackStarted = true;
-                        setLoading(false);
+                        reportPlaybackDebug(playAttemptId, 'canplay', media, '', useTranscodeNow ? 'transcode' : 'direct');
+                        console.info(`[play:${playAttemptId}] canplay`);
+                        // keep loading until actual 'playing' event on mobile/slow starts
                         state.dp.play().catch(() => {
                             state.dp.video.muted = true;
                             state.dp.play().catch(() => {});
@@ -1170,7 +1313,10 @@
                     // playing 事件也标记（双保险，有些浏览器 canplay 不可靠）
                     state.dp.video.addEventListener('playing', () => {
                         clearStallTimer();
+                        if (startupFallbackTimer) { clearTimeout(startupFallbackTimer); startupFallbackTimer = null; }
                         playbackStarted = true;
+                        reportPlaybackDebug(playAttemptId, 'playing', media, '', useTranscodeNow ? 'transcode' : 'direct');
+                        console.info(`[play:${playAttemptId}] playing`);
                         setLoading(false);
                     }, { once: true });
 
@@ -1183,9 +1329,13 @@
                         setLoading(false);
                     });
                     state.dp.video.addEventListener('waiting', () => {
+                        reportPlaybackDebug(playAttemptId, 'waiting', media, '', useTranscodeNow ? 'transcode' : 'direct');
+                        console.warn(`[play:${playAttemptId}] waiting`);
                         scheduleSoftRecover('waiting');
                     });
                     state.dp.video.addEventListener('stalled', () => {
+                        reportPlaybackDebug(playAttemptId, 'stalled', media, '', useTranscodeNow ? 'transcode' : 'direct');
+                        console.warn(`[play:${playAttemptId}] stalled`);
                         scheduleSoftRecover('stalled');
                     });
                     state.dp.video.addEventListener('pause', clearStallTimer);
@@ -1207,6 +1357,7 @@
                             return;
                         }
                         const mediaError = state.dp && state.dp.video ? state.dp.video.error : null;
+                        reportPlaybackDebug(playAttemptId, 'video_error', media, mediaError ? `video-error-${mediaError.code}` : 'video-error', useTranscodeNow ? 'transcode' : 'direct');
                         recoverPlayback(mediaError ? `video-error-${mediaError.code}` : 'video-error');
                     });
 
@@ -1864,7 +2015,8 @@
                 if (expectedRequestToken !== state.mediaState.requestToken) return;
                 if (expectedIndex !== state.currentIndex) return;
                 state.videoStack.push(next);
-                fetch((state.useTranscode ? next.transcode_url : next.url), { headers: { 'Range': 'bytes=0-1024000' } }).catch(() => {});
+                const preloadSelection = choosePlaybackSource(next);
+                fetch(preloadSelection.url, { headers: { 'Range': 'bytes=0-1024000' } }).catch(() => {});
             } catch (e) {
             } finally {
                 state.mediaState.preloadInFlight = false;
@@ -1963,7 +2115,7 @@
                     settled = true;
                     clearSeekHandlers();
                     state.mediaState.seekInFlight = false;
-                    setLoading(false);
+                    // keep loading until actual 'playing' event on mobile/slow starts
                     if (!ok) {
                         warnOnce('定位较慢，已自动尝试恢复');
                         if (state.mediaState.hlsInstance) {

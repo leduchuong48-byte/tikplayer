@@ -1,51 +1,49 @@
-<h1 align="center">Tikplayer</h1>
+# Tikplayer 2.4
 
-<p align="center">
-<a href="https://github.com/leduchuong48-byte/tikplayer/releases"><img alt="Release" src="https://img.shields.io/github/v/release/leduchuong48-byte/tikplayer?display_name=tag"></a>
-<a href="https://hub.docker.com/r/leduchuong/tikplayer"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/leduchuong/tikplayer?logo=docker"></a>
-<a href="https://github.com/leduchuong48-byte/tikplayer/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/leduchuong48-byte/tikplayer"></a>
-<a href="https://github.com/leduchuong48-byte/tikplayer/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/leduchuong48-byte/tikplayer"></a>
-</p>
+![Tikplayer UI Preview](docs/reviewed-ui/approved-01-review-01-entry-39.png)
 
-<h3 align="center">
-  <a href="README_en.md">English</a><span> · </span>
-  <a href="https://github.com/leduchuong48-byte/tikplayer/issues">报告问题</a>
-  <span> · </span>
-  <a href="https://github.com/leduchuong48-byte/tikplayer/discussions">讨论</a>
-</h3>
+[![Docker Pulls](https://img.shields.io/docker/pulls/leduchuong/tikplayer?logo=docker&label=Docker%20Pulls&style=flat-square)](https://hub.docker.com/r/leduchuong/tikplayer)
+[![GitHub Stars](https://img.shields.io/github/stars/leduchuong48-byte/tikplayer?style=flat-square)](https://github.com/leduchuong48-byte/tikplayer/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/leduchuong48-byte/tikplayer?style=flat-square)](https://github.com/leduchuong48-byte/tikplayer/network/members)
+[![GitHub Issues](https://img.shields.io/github/issues/leduchuong48-byte/tikplayer?style=flat-square)](https://github.com/leduchuong48-byte/tikplayer/issues)
+[![Platform: ARM64/AMD64](https://img.shields.io/badge/Platform-ARM64%2FAMD64-blue.svg)](#)
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](#)
 
-## 概述
+[English](README_en.md)
 
-Tikplayer 是一个面向 NAS / HomeLab 场景的轻量媒体播放与目录聚合 Web 应用，支持多源目录浏览、播放控制、文件操作和快速收纳。
+> Better alternative to traditional media dashboards for E-ink devices.
 
-## 界面
+Tikplayer 2.4 is a lightweight self-hosted video browser and player built for NAS, homelab, and low-power displays. It connects to AList sources, keeps playback simple, and exposes the core actions you actually need on a touch-first screen.
 
-### Web 管理台（2.4）
+## Why this tool?（为什么要做它）
 
-> 应隐私要求，本版本文档不再展示运行界面截图。
-> 如需查看演示界面，请在隔离演示环境中本地预览。
+很多家庭影音面板和通用文件浏览器在墨水屏、小尺寸触控屏和低功耗设备上并不好用：入口层级深、切换慢、播放失败后恢复困难、日常整理动作分散。Tikplayer 把播放、文件浏览、快捷收纳和账号配置压缩到一个轻量界面里，适合需要快速打开、快速播放、快速整理的人。
 
-## 支持
+## 当前版本亮点
 
-| 类别 | 支持 |
-|---|---|
-| 运行方式 | FastAPI + Web UI |
-| 主要场景 | 媒体播放、目录浏览、快速收纳、基础文件操作 |
-| 部署 | Docker / Docker Compose / N97 |
+- 面向 AList 源的轻量视频浏览与播放界面，适合 NAS 和自托管场景
+- 首页直接提供刷新源、全屏、下载、静音、旋转、收纳、删除等高频操作
+- 文件页支持多源切换、目录浏览、搜索、整目录播放、右键/长按操作
+- 设置页支持账号管理、路径选择、快捷收纳目录配置
+- 内置直接播放与转码回退能力，支持 `qsv`、`vaapi`、`cpu` 三种转码后端
 
-## 安装
+## UI 界面展示
 
-```bash
-git clone https://github.com/leduchuong48-byte/tikplayer.git
-cd tikplayer
-cp .env.example .env
-```
+以下截图为人工审核通过后的主要工作界面，按页面计划顺序展示。
 
-## Docker 容器
+![UI截图 1](docs/reviewed-ui/approved-01-review-01-entry-39.png)
+
+![UI截图 2](docs/reviewed-ui/approved-02-review-02-entry-43.png)
+
+![UI截图 3](docs/reviewed-ui/approved-03-review-03-entry-35.png)
+
+## ⚡️ Quick Start (Run in 3 seconds)
 
 ```bash
-docker pull leduchuong/tikplayer:latest
+docker run --rm -p 1015:8000 leduchuong/tikplayer:latest
 ```
+
+## Docker Compose（Portainer / NAS 可直接粘贴）
 
 ```yaml
 services:
@@ -57,32 +55,46 @@ services:
       - "1015:8000"
     env_file:
       - .env
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "44"
+      - "109"
+    environment:
+      - LIBVA_DRIVER_NAME=iHD
+      - TRANSCODE_BACKENDS=qsv,vaapi,cpu
     volumes:
       - ./image:/app/image
       - ./data:/app/data
-      - ./index.html:/app/index.html:ro
+      - ./static:/app/static:ro
+    shm_size: "2gb"
 ```
 
-## 配置
+## 配置说明
 
-- 核心配置：`sources.json`、`folders.json`
-- 运行环境：`.env`
-- 建议生产环境启用鉴权并配置白名单。
+- 默认服务端口是 `8000`，常见宿主机映射示例是 `1015:8000`
+- 首次进入后在“我的”页面配置 AList 地址、用户名、密码和扫描目录
+- 推荐保留 `/dev/dri` 映射，以启用 `qsv` 或 `vaapi` 硬件转码
+- 若没有可用显卡，应用会回退到 `cpu` 转码
 
-## 2.4 升级说明（对比 2.3）
+## 主要能力
 
-- 升级版本标识为 `2.4`，统一 Dockerfile / UI 标识。
-- Web UI 交互增强：底部导航流程更清晰，目录返回按钮更易用。
-- 文件夹配置模型增强：新增唯一 ID、启用状态、排序、备注、使用时间等字段，管理更稳定。
-- 新增服务能力：`sw.js` 与 `offline.html` 路由支持，PWA / 离线可用性增强。
-- API 侧新增文件夹项增删改与目标目录删除流程，支持更细粒度目录维护。
-- 建议现有 `2.3` 用户升级到 `2.4`。
+- AList 账号登录、目录选择、源配置持久化
+- 随机播放、目录播放、媒体下载、全屏和旋转控制
+- 快捷收纳目录、重命名、删除、移动等整理动作
+- 启动时刷新媒体池，并提供手动刷新与状态接口
+- PWA 安装提示、离线页、基础服务工作线程支持
 
-## 支持与贡献
+## GitHub Topics
+
+`#nas` `#homelab` `#selfhosted` `#alist` `#eink` `#media-player` `#docker`
+
+## Support
 
 - Issues: https://github.com/leduchuong48-byte/tikplayer/issues
-- Discussions: https://github.com/leduchuong48-byte/tikplayer/discussions
+- Repository: https://github.com/leduchuong48-byte/tikplayer
+- Docker Hub: https://hub.docker.com/r/leduchuong/tikplayer
 
 ## 免责声明
 
-使用本项目即表示你已阅读并同意 [DISCLAIMER.md](DISCLAIMER.md)。
+使用本项目即表示你已阅读并同意 [免责声明](DISCLAIMER.md)。请只在你有权访问和处理的媒体源上使用它。

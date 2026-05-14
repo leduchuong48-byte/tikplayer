@@ -1,51 +1,49 @@
-<h1 align="center">Tikplayer</h1>
+# Tikplayer 2.4
 
-<p align="center">
-<a href="https://github.com/leduchuong48-byte/tikplayer/releases"><img alt="Release" src="https://img.shields.io/github/v/release/leduchuong48-byte/tikplayer?display_name=tag"></a>
-<a href="https://hub.docker.com/r/leduchuong/tikplayer"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/leduchuong/tikplayer?logo=docker"></a>
-<a href="https://github.com/leduchuong48-byte/tikplayer/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/leduchuong48-byte/tikplayer"></a>
-<a href="https://github.com/leduchuong48-byte/tikplayer/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/leduchuong48-byte/tikplayer"></a>
-</p>
+![Tikplayer UI Preview](docs/reviewed-ui/approved-01-review-01-entry-39.png)
 
-<h3 align="center">
-  <a href="README.md">中文</a><span> · </span>
-  <a href="https://github.com/leduchuong48-byte/tikplayer/issues">Report Bug</a>
-  <span> · </span>
-  <a href="https://github.com/leduchuong48-byte/tikplayer/discussions">Discussions</a>
-</h3>
+[![Docker Pulls](https://img.shields.io/docker/pulls/leduchuong/tikplayer?logo=docker&label=Docker%20Pulls&style=flat-square)](https://hub.docker.com/r/leduchuong/tikplayer)
+[![GitHub Stars](https://img.shields.io/github/stars/leduchuong48-byte/tikplayer?style=flat-square)](https://github.com/leduchuong48-byte/tikplayer/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/leduchuong48-byte/tikplayer?style=flat-square)](https://github.com/leduchuong48-byte/tikplayer/network/members)
+[![GitHub Issues](https://img.shields.io/github/issues/leduchuong48-byte/tikplayer?style=flat-square)](https://github.com/leduchuong48-byte/tikplayer/issues)
+[![Platform: ARM64/AMD64](https://img.shields.io/badge/Platform-ARM64%2FAMD64-blue.svg)](#)
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](#)
 
-## Overview
+[中文](README.md)
 
-Tikplayer is a lightweight self-hosted media browser/player for NAS and HomeLab use cases.
+> Better alternative to traditional media dashboards for E-ink devices.
 
-## Interface
+Tikplayer 2.4 is a lightweight self-hosted video browser and player for NAS, homelab, and touch-first low-power screens. It connects to AList sources and keeps playback, browsing, and media organization in one compact interface.
 
-### Web UI (2.4)
+## Why this tool?
 
-> Screenshots are intentionally removed due to privacy requirements.
-> Please preview UI only in an isolated local demo environment.
+Many generic media dashboards feel heavy on E-ink displays and small touch panels. They hide common actions behind too many layers, recover poorly when playback fails, and make routine cleanup harder than it should be. Tikplayer focuses on the short path: open, browse, play, archive, delete, and move on.
 
-## Support Matrix
+## Highlights in 2.4
 
-| Category | Support |
-|---|---|
-| Runtime | FastAPI + Web UI |
-| Core Use Cases | playback, browsing, quick organize, file actions |
-| Deployment | Docker / Docker Compose / N97 |
+- Lightweight AList-based media browsing and playback flow
+- Main screen actions for refresh, fullscreen, download, mute, rotate, archive, and delete
+- File workspace with source switching, folder browsing, search, and folder play
+- Settings workspace for account management, path picking, and quick archive targets
+- Direct playback with fallback transcoding through `qsv`, `vaapi`, and `cpu` backends
 
-## Installation
+## UI Preview
 
-```bash
-git clone https://github.com/leduchuong48-byte/tikplayer.git
-cd tikplayer
-cp .env.example .env
-```
+The screenshots below show the reviewed main work interfaces in plan order.
 
-## Docker
+![UI Screenshot 1](docs/reviewed-ui/approved-01-review-01-entry-39.png)
+
+![UI Screenshot 2](docs/reviewed-ui/approved-02-review-02-entry-43.png)
+
+![UI Screenshot 3](docs/reviewed-ui/approved-03-review-03-entry-35.png)
+
+## ⚡️ Quick Start (Run in 3 seconds)
 
 ```bash
-docker pull leduchuong/tikplayer:latest
+docker run --rm -p 1015:8000 leduchuong/tikplayer:latest
 ```
+
+## Docker Compose
 
 ```yaml
 services:
@@ -57,32 +55,46 @@ services:
       - "1015:8000"
     env_file:
       - .env
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "44"
+      - "109"
+    environment:
+      - LIBVA_DRIVER_NAME=iHD
+      - TRANSCODE_BACKENDS=qsv,vaapi,cpu
     volumes:
       - ./image:/app/image
       - ./data:/app/data
-      - ./index.html:/app/index.html:ro
+      - ./static:/app/static:ro
+    shm_size: "2gb"
 ```
 
 ## Configuration
 
-- Core files: `sources.json`, `folders.json`
-- Runtime env: `.env`
-- Production recommendation: enable auth and host restrictions.
+- The app listens on port `8000`; a common host mapping is `1015:8000`
+- Configure your AList endpoint, credentials, and browse paths from the `My` page
+- Keep `/dev/dri` mapped when you want `qsv` or `vaapi` hardware transcoding
+- When no hardware backend is available, Tikplayer can fall back to `cpu` transcoding
 
-## Upgrade Notes (2.4 vs 2.3)
+## Core Capabilities
 
-- Version markers aligned to `2.4`.
-- Improved Web UI navigation and folder-back interaction.
-- Enhanced folder config model with stable ID/status/sort/note/last-used fields.
-- Added `sw.js` and `offline.html` routes for better PWA/offline behavior.
-- Added folder item CRUD and target-folder delete APIs.
-- Upgrade from `2.3` to `2.4` is recommended.
+- AList source configuration, login, and path persistence
+- Random play, folder play, media download, fullscreen, and rotate controls
+- Quick archive targets plus rename, delete, and move actions
+- Startup media reload flow with manual refresh and status endpoints
+- PWA install prompt, offline page, and service worker support
 
-## Support & Contribution
+## Suggested Topics
+
+`#nas` `#homelab` `#selfhosted` `#alist` `#eink` `#media-player` `#docker`
+
+## Support
 
 - Issues: https://github.com/leduchuong48-byte/tikplayer/issues
-- Discussions: https://github.com/leduchuong48-byte/tikplayer/discussions
+- Repository: https://github.com/leduchuong48-byte/tikplayer
+- Docker Hub: https://hub.docker.com/r/leduchuong/tikplayer
 
 ## Disclaimer
 
-By using this project, you agree to [DISCLAIMER.md](DISCLAIMER.md).
+By using this project you agree to the [disclaimer](DISCLAIMER.md). Only use it with media sources you are allowed to access and manage.

@@ -1,4 +1,4 @@
-const SW_VERSION = 'tikplayer-shell-v1';
+const SW_VERSION = 'tikplayer-shell-v2';
 const SHELL_CACHE = `${SW_VERSION}-shell`;
 const RUNTIME_CACHE = `${SW_VERSION}-runtime`;
 const PRECACHE_URLS = [
@@ -7,6 +7,7 @@ const PRECACHE_URLS = [
   '/offline.html',
   '/static/hls.min.js',
   '/static/artplayer.js',
+  '/static/playback-policy.js',
   '/static/icons/icon-192.png',
   '/static/icons/icon-512.png',
   '/static/icons/icon-512-maskable.png',

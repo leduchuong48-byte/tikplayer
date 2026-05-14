@@ -2,6 +2,8 @@ name: tikplayer
 
 services:
   tikplayer:
+    build:
+      context: .
     image: tikplayer:2.4
     container_name: tikplayer
     restart: unless-stopped
@@ -16,10 +18,16 @@ services:
       - "109"
     environment:
       - LIBVA_DRIVER_NAME=iHD
+      - TRANSCODE_BACKENDS=qsv,vaapi,cpu
     volumes:
       - ./image:/app/image
       - ./data:/app/data
       - ./index.html:/app/index.html:ro
+      - ./offline.html:/app/offline.html:ro
+      - ./main.py:/app/main.py:ro
+      - ./sw.js:/app/sw.js:ro
+      - ./manifest.json:/app/manifest.json:ro
+      - ./static:/app/static:ro
     shm_size: "2gb"
     logging:
       driver: "json-file"
