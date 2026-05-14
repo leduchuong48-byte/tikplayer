@@ -11,17 +11,17 @@
 
 [中文](README.md)
 
-> A focused AList browser and player for self-hosted media libraries.
+> A web UI for AList media browsing, playback, and file actions.
 
-Tikplayer 2.4 is a lightweight self-hosted video browser and player for NAS, homelab, and AList-backed media libraries. It keeps browsing, playback, downloads, file actions, and basic settings inside one mobile-first web interface.
+Tikplayer 2.4 is a web interface for browsing, playing, downloading, and organizing media from AList sources in NAS and other self-hosted environments.
 
 ## Why this tool?
 
-Many generic file browsers are optimized for file management, not day-to-day playback. Common tasks such as refresh, random play, folder play, download, move, delete, and fallback transcoding are often scattered across multiple screens. Tikplayer keeps those high-frequency actions in one mobile-first web UI.
+Generic file browsers are usually organized around file management rather than media playback. Tikplayer keeps source refresh, random play, folder play, download, move, delete, and fallback transcoding in one web UI.
 
 ## Highlights in 2.4
 
-- Lightweight AList-based media browsing and playback flow
+- AList-based media browsing and playback
 - Main screen actions for refresh, fullscreen, download, mute, rotate, archive, and delete
 - File workspace with source switching, folder browsing, search, and folder play
 - Settings workspace for account management, path picking, and quick archive targets
@@ -38,7 +38,7 @@ The screenshots below show the reviewed main work interfaces in plan order.
 
 ![UI Screenshot 3](docs/reviewed-ui/approved-03-review-03-entry-35.png)
 
-## ⚡️ Quick Start (Run in 3 seconds)
+## Quick Start
 
 ```bash
 docker run --rm -p 1015:8000 leduchuong/tikplayer:latest
