@@ -11,13 +11,13 @@
 
 [中文](README.md)
 
-> Better alternative to traditional media dashboards for E-ink devices.
+> A focused AList browser and player for self-hosted media libraries.
 
-Tikplayer 2.4 is a lightweight self-hosted video browser and player for NAS, homelab, and touch-first low-power screens. It connects to AList sources and keeps playback, browsing, and media organization in one compact interface.
+Tikplayer 2.4 is a lightweight self-hosted video browser and player for NAS, homelab, and AList-backed media libraries. It keeps browsing, playback, downloads, file actions, and basic settings inside one mobile-first web interface.
 
 ## Why this tool?
 
-Many generic media dashboards feel heavy on E-ink displays and small touch panels. They hide common actions behind too many layers, recover poorly when playback fails, and make routine cleanup harder than it should be. Tikplayer focuses on the short path: open, browse, play, archive, delete, and move on.
+Many generic file browsers are optimized for file management, not day-to-day playback. Common tasks such as refresh, random play, folder play, download, move, delete, and fallback transcoding are often scattered across multiple screens. Tikplayer keeps those high-frequency actions in one mobile-first web UI.
 
 ## Highlights in 2.4
 
@@ -88,7 +88,7 @@ services:
 
 ## Suggested Topics
 
-`#nas` `#homelab` `#selfhosted` `#alist` `#eink` `#media-player` `#docker`
+`#nas` `#homelab` `#selfhosted` `#alist` `#media-player` `#pwa` `#docker`
 
 ## Support
 

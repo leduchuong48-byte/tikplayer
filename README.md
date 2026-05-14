@@ -11,13 +11,13 @@
 
 [English](README_en.md)
 
-> Better alternative to traditional media dashboards for E-ink devices.
+> A focused AList browser and player for self-hosted media libraries.
 
-Tikplayer 2.4 is a lightweight self-hosted video browser and player built for NAS, homelab, and low-power displays. It connects to AList sources, keeps playback simple, and exposes the core actions you actually need on a touch-first screen.
+Tikplayer 2.4 是一个面向 NAS、自托管媒体库和 AList 媒体源的轻量 Web 播放器。它把浏览、播放、下载、整理和基础设置集中到一个移动优先的界面里。
 
 ## Why this tool?（为什么要做它）
 
-很多家庭影音面板和通用文件浏览器在墨水屏、小尺寸触控屏和低功耗设备上并不好用：入口层级深、切换慢、播放失败后恢复困难、日常整理动作分散。Tikplayer 把播放、文件浏览、快捷收纳和账号配置压缩到一个轻量界面里，适合需要快速打开、快速播放、快速整理的人。
+很多通用文件浏览器更偏向桌面文件管理，日常看视频时常用动作往往分散在多个页面：刷新源、随机播放、目录播放、下载、移动、删除和转码回退并不顺手。Tikplayer 把这些高频操作收拢到一个移动优先的 Web 界面里，减少在媒体源、播放器和管理动作之间来回切换。
 
 ## 当前版本亮点
 
@@ -88,7 +88,7 @@ services:
 
 ## GitHub Topics
 
-`#nas` `#homelab` `#selfhosted` `#alist` `#eink` `#media-player` `#docker`
+`#nas` `#homelab` `#selfhosted` `#alist` `#media-player` `#pwa` `#docker`
 
 ## Support
 
