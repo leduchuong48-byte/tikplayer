@@ -6,7 +6,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/leduchuong48-byte/tikplayer?style=flat-square)](https://github.com/leduchuong48-byte/tikplayer/stargazers)
 [![GitHub Forks](https://img.shields.io/github/forks/leduchuong48-byte/tikplayer?style=flat-square)](https://github.com/leduchuong48-byte/tikplayer/network/members)
 [![GitHub Issues](https://img.shields.io/github/issues/leduchuong48-byte/tikplayer?style=flat-square)](https://github.com/leduchuong48-byte/tikplayer/issues)
-[![Platform: ARM64/AMD64](https://img.shields.io/badge/Platform-ARM64%2FAMD64-blue.svg)](#)
+[![Platform: AMD64](https://img.shields.io/badge/Platform-AMD64-blue.svg)](#)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](#)
 
 [English](README_en.md)
@@ -26,6 +26,7 @@ Tikplayer 2.4 is a lightweight self-hosted video browser and player built for NA
 - 文件页支持多源切换、目录浏览、搜索、整目录播放、右键/长按操作
 - 设置页支持账号管理、路径选择、快捷收纳目录配置
 - 内置直接播放与转码回退能力，支持 `qsv`、`vaapi`、`cpu` 三种转码后端
+- 当前公开镜像标签提供 `linux/amd64` 构建，硬件加速路径面向 Intel `/dev/dri`，其他架构请自行构建
 
 ## UI 界面展示
 

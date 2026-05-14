@@ -6,7 +6,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/leduchuong48-byte/tikplayer?style=flat-square)](https://github.com/leduchuong48-byte/tikplayer/stargazers)
 [![GitHub Forks](https://img.shields.io/github/forks/leduchuong48-byte/tikplayer?style=flat-square)](https://github.com/leduchuong48-byte/tikplayer/network/members)
 [![GitHub Issues](https://img.shields.io/github/issues/leduchuong48-byte/tikplayer?style=flat-square)](https://github.com/leduchuong48-byte/tikplayer/issues)
-[![Platform: ARM64/AMD64](https://img.shields.io/badge/Platform-ARM64%2FAMD64-blue.svg)](#)
+[![Platform: AMD64](https://img.shields.io/badge/Platform-AMD64-blue.svg)](#)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](#)
 
 [中文](README.md)
@@ -26,6 +26,7 @@ Many generic media dashboards feel heavy on E-ink displays and small touch panel
 - File workspace with source switching, folder browsing, search, and folder play
 - Settings workspace for account management, path picking, and quick archive targets
 - Direct playback with fallback transcoding through `qsv`, `vaapi`, and `cpu` backends
+- The published container tags currently provide `linux/amd64` builds with Intel `/dev/dri` focused acceleration; build your own image for other architectures
 
 ## UI Preview
 
